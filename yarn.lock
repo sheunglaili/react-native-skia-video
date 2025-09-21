@@ -3171,7 +3171,7 @@ __metadata:
     "@react-native/typescript-config": 0.76.0
     "@react-navigation/native": ^6.1.18
     "@react-navigation/native-stack": ^6.11.0
-    "@shopify/react-native-skia": ^1.12.3
+    "@shopify/react-native-skia": ^2.2.18
     babel-plugin-module-resolver: ^5.0.0
     pexels: ^1.4.0
     react: 18.3.1
@@ -3240,6 +3240,27 @@ __metadata:
   bin:
     setup-skia-web: scripts/setup-canvaskit.js
   checksum: da2c12e8032bf41871e3d64ff40b13a6da3dba15d58a140a15031b309964764a97b1e8c14d3b270fd76deb4e7906095a405537a9417c6b071d353f5e11ac75fb
+  languageName: node
+  linkType: hard
+
+"@shopify/react-native-skia@npm:^2.2.18":
+  version: 2.2.18
+  resolution: "@shopify/react-native-skia@npm:2.2.18"
+  dependencies:
+    canvaskit-wasm: 0.40.0
+    react-reconciler: 0.31.0
+  peerDependencies:
+    react: ">=19.0"
+    react-native: ">=0.78"
+    react-native-reanimated: ">=3.19.1"
+  peerDependenciesMeta:
+    react-native:
+      optional: true
+    react-native-reanimated:
+      optional: true
+  bin:
+    setup-skia-web: scripts/setup-canvaskit.js
+  checksum: 0fd844ee709a9936742efa888372e8f8615a10e481aa49e798bd94819eea837b43164dca5a74216b58d453aba4a0d3c6c83d6efbb6eb8711b8e0dbdc077a3f1e
   languageName: node
   linkType: hard
 
@@ -11299,6 +11320,17 @@ __metadata:
   languageName: node
   linkType: hard
 
+"react-reconciler@npm:0.31.0":
+  version: 0.31.0
+  resolution: "react-reconciler@npm:0.31.0"
+  dependencies:
+    scheduler: ^0.25.0
+  peerDependencies:
+    react: ^19.0.0
+  checksum: 820c4e4003c5615849bf0cda97d8a55b99af2bb59cc0825882b727f0ad0c4bf4581bb3d25e00beca1164203dbc172f0a8c4725e7aa2fb85e025938722384a84e
+  languageName: node
+  linkType: hard
+
 "react-refresh@npm:^0.14.0":
   version: 0.14.2
   resolution: "react-refresh@npm:0.14.2"
@@ -11845,6 +11877,13 @@ __metadata:
   dependencies:
     loose-envify: ^1.1.0
   checksum: 4f8285076041ed2c81acdd1faa987f1655fdbd30554bc667c1ea64743fc74fb3a04ca7d27454b3d678735df5a230137a3b84756061b43dc5796e80701b66d124
+  languageName: node
+  linkType: hard
+
+"scheduler@npm:^0.25.0":
+  version: 0.25.0
+  resolution: "scheduler@npm:0.25.0"
+  checksum: b7bb9fddbf743e521e9aaa5198a03ae823f5e104ebee0cb9ec625392bb7da0baa1c28ab29cee4b1e407a94e76acc6eee91eeb749614f91f853efda2613531566
   languageName: node
   linkType: hard
 
