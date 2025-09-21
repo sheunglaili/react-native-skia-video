@@ -1,4 +1,4 @@
-package com.azzapp.rnskv;
+package com.sheunglaili.rnskv;
 
 import java.util.HashMap;
 import java.util.Map;

@@ -107,7 +107,10 @@
   "commitlint": {
     "extends": [
       "@commitlint/config-conventional"
-    ]
+    ],
+    "rules": {
+      "header-max-length": [0, "always", 110]
+    }
   },
   "release-it": {
     "git": {
