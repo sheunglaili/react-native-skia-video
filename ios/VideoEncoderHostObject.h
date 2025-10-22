@@ -30,7 +30,7 @@ private:
 
   void prepare();
   void encodeFrame(id<MTLTexture> mlTexture, CMTime time);
-  void encodeAudioBuffer(jsi::ArrayBuffer& buffer, CMTime time);
+  void encodeAudioBuffer(uint8_t* audioData, size_t audioDataSize, CMTime time);
   void finish();
   void release();
 };

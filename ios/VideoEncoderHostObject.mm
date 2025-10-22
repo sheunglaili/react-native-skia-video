@@ -71,9 +71,11 @@ jsi::Value VideoEncoderHostObject::get(jsi::Runtime& runtime,
           }
           
           auto arrayBuffer = arguments[0].asObject(runtime).getArrayBuffer(runtime);
+          uint8_t* audioData = arrayBuffer.data(runtime);
+          size_t audioDataSize = arrayBuffer.size(runtime);
           auto time = CMTimeMakeWithSeconds(arguments[1].asNumber(), NSEC_PER_SEC);
           
-          encodeAudioBuffer(arrayBuffer, time);
+          encodeAudioBuffer(audioData, audioDataSize, time);
           return jsi::Value::undefined();
         });
   }
@@ -258,16 +260,12 @@ void VideoEncoderHostObject::encodeFrame(id<MTLTexture> mlTexture,
   }
 }
 
-void VideoEncoderHostObject::encodeAudioBuffer(jsi::ArrayBuffer& arrayBuffer, CMTime time) {
+void VideoEncoderHostObject::encodeAudioBuffer(uint8_t* audioData, size_t audioDataSize, CMTime time) {
   if (!audioWriterInput || !audioWriterInput.isReadyForMoreMediaData) {
     return;
   }
 
-  // Get audio data from ArrayBuffer
-  uint8_t* audioData = arrayBuffer.data();
-  size_t audioDataSize = arrayBuffer.size();
-
-  if (audioDataSize == 0) {
+  if (audioDataSize == 0 || audioData == nullptr) {
     return;
   }
 
