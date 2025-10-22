@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import pexelsClient from './helpers/pexelsClient';
 import type { Video } from 'pexels';
 import {
@@ -72,7 +72,40 @@ export default VideoCompositionExample;
 const PexelsVideoPicker = ({
   navigation,
 }: NativeStackScreenProps<StackParamList>) => {
-  const [videos, setVideos] = useState<Video[]>([]);
+  // Hardcoded test video for audio export testing
+  const testVideo = useMemo(
+    () =>
+      ({
+        id: 999999,
+        width: 1920,
+        height: 1080,
+        duration: 15,
+        url: 'http://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4',
+        image: 'https://placehold.co/400x300.png?text=Test+Video',
+        video_files: [
+          {
+            id: 999999,
+            quality: 'hd' as const,
+            file_type: 'string',
+            width: 1920,
+            height: 1080,
+            link: 'http://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4',
+            fps: 30,
+          },
+        ],
+        video_pictures: [],
+        full_res: null,
+        tags: [],
+        user: {
+          id: 0,
+          name: 'Test User',
+          url: '',
+        },
+      }) as Video,
+    []
+  );
+
+  const [videos, setVideos] = useState<Video[]>([testVideo]);
   const [selectedVideos, setSelectedVideos] = useState<Set<number>>(new Set());
   const [page, setPage] = useState(1);
   const isLoading = useRef(true);
@@ -94,17 +127,25 @@ const PexelsVideoPicker = ({
 
   const { width: windowWidth } = useWindowDimensions();
 
-  const loadVideos = useCallback(async (page: number) => {
-    const response = await pexelsClient.videos.popular({ per_page: 50, page });
-    if ('error' in response) {
-      console.error(response.error);
-      return;
-    }
-    setVideos((videos) =>
-      page === 1 ? response.videos : [...videos, ...response.videos]
-    );
-    isLoading.current = false;
-  }, []);
+  const loadVideos = useCallback(
+    async (page: number) => {
+      const response = await pexelsClient.videos.popular({
+        per_page: 50,
+        page,
+      });
+      if ('error' in response) {
+        console.error(response.error);
+        return;
+      }
+      setVideos((videos) =>
+        page === 1
+          ? [testVideo, ...response.videos]
+          : [...videos, ...response.videos]
+      );
+      isLoading.current = false;
+    },
+    [testVideo]
+  );
 
   useEffect(() => {
     loadVideos(page);
