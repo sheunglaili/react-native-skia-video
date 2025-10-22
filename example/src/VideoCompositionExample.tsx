@@ -80,7 +80,7 @@ const PexelsVideoPicker = ({
         width: 1920,
         height: 1080,
         duration: 15,
-        url: 'http://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4',
+        url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4',
         image: 'https://placehold.co/400x300.png?text=Test+Video',
         video_files: [
           {
@@ -89,7 +89,7 @@ const PexelsVideoPicker = ({
             file_type: 'string',
             width: 1920,
             height: 1080,
-            link: 'http://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4',
+            link: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4',
             fps: 30,
           },
         ],
