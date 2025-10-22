@@ -86,6 +86,10 @@ void install(jsi::Runtime& jsiRuntime) {
 
   RNSVModule.setProperty(jsiRuntime,
                          "createVideoCompositionFramesExtractorSync",
+                         jsi::Value(jsiRuntime, createVideoCompositionFramesExtractorSync));
+  // Add new name as well (deprecated alias)
+  RNSVModule.setProperty(jsiRuntime,
+                         "createVideoCompositionExtractorSync",
                          std::move(createVideoCompositionFramesExtractorSync));
 
   auto createVideoEncoder = jsi::Function::createFromHostFunction(

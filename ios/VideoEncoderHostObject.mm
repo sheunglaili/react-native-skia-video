@@ -26,6 +26,7 @@ VideoEncoderHostObject::getPropertyNames(jsi::Runtime& rt) {
   std::vector<jsi::PropNameID> result;
   result.push_back(jsi::PropNameID::forUtf8(rt, std::string("prepare")));
   result.push_back(jsi::PropNameID::forUtf8(rt, std::string("encodeFrame")));
+  result.push_back(jsi::PropNameID::forUtf8(rt, std::string("encodeAudio")));
   result.push_back(jsi::PropNameID::forUtf8(rt, std::string("finishWriting")));
   result.push_back(jsi::PropNameID::forUtf8(rt, std::string("dispose")));
   return result;
@@ -57,6 +58,22 @@ jsi::Value VideoEncoderHostObject::get(jsi::Runtime& runtime,
               CMTimeMakeWithSeconds(arguments[1].asNumber(), NSEC_PER_SEC);
 
           encodeFrame(texture, time);
+          return jsi::Value::undefined();
+        });
+  }
+  if (propName == "encodeAudio") {
+    return jsi::Function::createFromHostFunction(
+        runtime, jsi::PropNameID::forAscii(runtime, "encodeAudio"), 2,
+        [this](jsi::Runtime& runtime, const jsi::Value& thisValue,
+               const jsi::Value* arguments, size_t count) -> jsi::Value {
+          if (count < 2 || !arguments[0].isObject()) {
+            return jsi::Value::undefined();
+          }
+          
+          auto arrayBuffer = arguments[0].asObject(runtime).getArrayBuffer(runtime);
+          auto time = CMTimeMakeWithSeconds(arguments[1].asNumber(), NSEC_PER_SEC);
+          
+          encodeAudioBuffer(arrayBuffer, time);
           return jsi::Value::undefined();
         });
   }
@@ -117,6 +134,23 @@ void VideoEncoderHostObject::prepare() {
         ?: createErrorWithMessage(@"could not add output to asset writter");
     return;
   }
+
+  // Add audio writer input - AAC with hardcoded sensible defaults
+  NSDictionary* audioSettings = @{
+    AVFormatIDKey : @(kAudioFormatMPEG4AAC),
+    AVSampleRateKey : @(44100),
+    AVNumberOfChannelsKey : @(2),
+    AVEncoderBitRateKey : @(128000)
+  };
+  
+  audioWriterInput =
+      [AVAssetWriterInput assetWriterInputWithMediaType:AVMediaTypeAudio
+                                         outputSettings:audioSettings];
+  audioWriterInput.expectsMediaDataInRealTime = NO;
+  if ([assetWriter canAddInput:audioWriterInput]) {
+    [assetWriter addInput:audioWriterInput];
+  }
+
   [assetWriter startWriting];
   [assetWriter startSessionAtSourceTime:kCMTimeZero];
 
@@ -224,6 +258,99 @@ void VideoEncoderHostObject::encodeFrame(id<MTLTexture> mlTexture,
   }
 }
 
+void VideoEncoderHostObject::encodeAudioBuffer(jsi::ArrayBuffer& arrayBuffer, CMTime time) {
+  if (!audioWriterInput || !audioWriterInput.isReadyForMoreMediaData) {
+    return;
+  }
+
+  // Get audio data from ArrayBuffer
+  uint8_t* audioData = arrayBuffer.data();
+  size_t audioDataSize = arrayBuffer.size();
+
+  if (audioDataSize == 0) {
+    return;
+  }
+
+  // Create CMBlockBuffer from ArrayBuffer data (copy required for async processing)
+  CMBlockBufferRef blockBuffer = NULL;
+  OSStatus status = CMBlockBufferCreateWithMemoryBlock(
+      kCFAllocatorDefault,
+      NULL,  // Allocate new memory
+      audioDataSize,
+      kCFAllocatorDefault,
+      NULL,
+      0,
+      audioDataSize,
+      0,
+      &blockBuffer);
+
+  if (status != noErr || !blockBuffer) {
+    return;
+  }
+
+  // Copy data from ArrayBuffer to CMBlockBuffer
+  status = CMBlockBufferReplaceDataBytes(audioData, blockBuffer, 0, audioDataSize);
+  if (status != noErr) {
+    CFRelease(blockBuffer);
+    return;
+  }
+
+  // Create audio format description for Linear PCM (matching our decoder output)
+  AudioStreamBasicDescription asbd = {0};
+  asbd.mSampleRate = 44100;
+  asbd.mFormatID = kAudioFormatLinearPCM;
+  asbd.mFormatFlags = kLinearPCMFormatFlagIsSignedInteger | kLinearPCMFormatFlagIsPacked;
+  asbd.mBitsPerChannel = 16;
+  asbd.mChannelsPerFrame = 2;
+  asbd.mBytesPerFrame = asbd.mChannelsPerFrame * (asbd.mBitsPerChannel / 8);
+  asbd.mFramesPerPacket = 1;
+  asbd.mBytesPerPacket = asbd.mBytesPerFrame * asbd.mFramesPerPacket;
+
+  CMFormatDescriptionRef formatDescription = NULL;
+  status = CMAudioFormatDescriptionCreate(
+      kCFAllocatorDefault,
+      &asbd,
+      0,
+      NULL,
+      0,
+      NULL,
+      NULL,
+      &formatDescription);
+
+  if (status != noErr || !formatDescription) {
+    CFRelease(blockBuffer);
+    return;
+  }
+
+  // Calculate number of samples
+  size_t numSamples = audioDataSize / asbd.mBytesPerFrame;
+
+  // Create CMSampleBuffer
+  CMSampleBufferRef sampleBuffer = NULL;
+  status = CMAudioSampleBufferCreateReadyWithPacketDescriptions(
+      kCFAllocatorDefault,
+      blockBuffer,
+      formatDescription,
+      numSamples,
+      time,
+      NULL,
+      &sampleBuffer);
+
+  CFRelease(blockBuffer);
+  CFRelease(formatDescription);
+
+  if (status != noErr || !sampleBuffer) {
+    return;
+  }
+
+  // Append to audio writer input
+  if ([audioWriterInput isReadyForMoreMediaData]) {
+    [audioWriterInput appendSampleBuffer:sampleBuffer];
+  }
+
+  CFRelease(sampleBuffer);
+}
+
 void VideoEncoderHostObject::finish() {
 
   __block std::promise<void> promise;
@@ -249,6 +376,7 @@ void VideoEncoderHostObject::release() {
   }
   assetWriter = nil;
   assetWriterInput = nil;
+  audioWriterInput = nil;
   CVPixelBufferRelease(pixelBuffer);
   pixelBuffer = NULL;
   if (cpuAccessibleTexture) {

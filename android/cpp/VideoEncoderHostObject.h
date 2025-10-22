@@ -1,5 +1,6 @@
 #pragma once
 
+#include "AudioSample.h"
 #include "SkiaContextHolder.h"
 #include "VideoComposition.h"
 #include <EGL/egl.h>
@@ -24,6 +25,8 @@ public:
   void makeGLContextCurrent() const;
 
   void encodeFrame(jint texture, jdouble time) const;
+
+  void encodeAudio(alias_ref<JByteBuffer> audioBuffer, jdouble time) const;
 
   void finishWriting() const;
 

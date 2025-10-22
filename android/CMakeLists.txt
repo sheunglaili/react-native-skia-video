@@ -20,6 +20,8 @@ add_library(${PACKAGE_NAME}
         SHARED
         ../cpp/EventEmitter.h
         ../cpp/EventEmitter.cpp
+        cpp/AudioSample.h
+        cpp/AudioSample.cpp
         cpp/JNIHelpers.h
         cpp/JNIHelpers.cpp
         cpp/cpp-adapter.cpp

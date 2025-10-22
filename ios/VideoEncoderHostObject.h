@@ -25,10 +25,12 @@ private:
   id<MTLTexture> cpuAccessibleTexture;
   AVAssetWriter* assetWriter;
   AVAssetWriterInput* assetWriterInput;
+  AVAssetWriterInput* audioWriterInput;
   CVPixelBufferRef pixelBuffer;
 
   void prepare();
   void encodeFrame(id<MTLTexture> mlTexture, CMTime time);
+  void encodeAudioBuffer(jsi::ArrayBuffer& buffer, CMTime time);
   void finish();
   void release();
 };

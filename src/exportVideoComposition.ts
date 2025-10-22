@@ -3,11 +3,12 @@ import { Platform } from 'react-native';
 import { Skia, BlendMode } from '@shopify/react-native-skia';
 import type { SkSurface } from '@shopify/react-native-skia';
 import type {
+  AudioSample,
   ExportOptions,
   FrameDrawer,
   VideoComposition,
   VideoEncoder,
-  VideoCompositionFramesExtractorSync,
+  VideoCompositionExtractorSync,
 } from './types';
 import RNSkiaVideoModule from './RNSkiaVideoModule';
 import { runOnNewThread } from './utils/thread';
@@ -63,7 +64,7 @@ export const exportVideoComposition = async <T = undefined>({
       'worklet';
 
       let surface: SkSurface | null = null;
-      let frameExtractor: VideoCompositionFramesExtractorSync | null = null;
+      let frameExtractor: VideoCompositionExtractorSync | null = null;
       let encoder: VideoEncoder | null = null;
       const { width, height } = options;
       try {
@@ -76,7 +77,7 @@ export const exportVideoComposition = async <T = undefined>({
         encoder.prepare();
 
         frameExtractor =
-          RNSkiaVideoModule.createVideoCompositionFramesExtractorSync(
+          RNSkiaVideoModule.createVideoCompositionExtractorSync(
             videoComposition
           );
         frameExtractor.start();
@@ -87,6 +88,9 @@ export const exportVideoComposition = async <T = undefined>({
         for (let i = 0; i < nbFrames; i++) {
           const currentTime = i / options.frameRate;
           const frames = frameExtractor.decodeCompositionFrames(currentTime);
+          const audioSamples =
+            frameExtractor.decodeCompositionAudio(currentTime);
+
           canvas.drawColor(clearColor, BlendMode.Clear);
           const context = beforeDrawFrame?.() as any;
           drawFrame({
@@ -107,6 +111,13 @@ export const exportVideoComposition = async <T = undefined>({
           }
           const texture = surface.getNativeTextureUnstable();
           encoder.encodeFrame(texture, currentTime);
+
+          // Mix and encode audio
+          const mixedAudioBuffer = mixAudioBuffers(audioSamples);
+          if (mixedAudioBuffer) {
+            encoder.encodeAudio(mixedAudioBuffer, currentTime);
+          }
+
           afterDrawFrame?.(context);
           if (onProgress) {
             runOnJS(onProgress)({
@@ -134,3 +145,30 @@ export const exportVideoComposition = async <T = undefined>({
       runOnJS(resolve)();
     });
   });
+
+/**
+ * Mixes multiple audio samples into a single ArrayBuffer using additive mixing
+ * with automatic volume scaling to prevent clipping.
+ */
+function mixAudioBuffers(
+  audioSamples: Record<string, AudioSample>
+): ArrayBuffer | null {
+  'worklet';
+  const samples = Object.values(audioSamples);
+  if (samples.length === 0) return null;
+  if (samples.length === 1) return samples[0]?.buffer || null;
+
+  // Simple additive mixing with volume scaling
+  const volumeScale = 1.0 / samples.length;
+  const mixedBuffer = new ArrayBuffer(samples[0]!.buffer.byteLength);
+  const mixedView = new Int16Array(mixedBuffer);
+
+  samples.forEach((sample) => {
+    const view = new Int16Array(sample.buffer);
+    for (let i = 0; i < view.length; i++) {
+      mixedView[i]! += view[i]! * volumeScale;
+    }
+  });
+
+  return mixedBuffer;
+}

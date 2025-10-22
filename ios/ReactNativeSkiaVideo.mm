@@ -119,6 +119,9 @@ RCT_EXPORT_BLOCKING_SYNCHRONOUS_METHOD(install) {
           });
 
   RNSVModule.setProperty(runtime, "createVideoCompositionFramesExtractorSync",
+                         jsi::Value(runtime, createVideoCompositionFramesExtractorSync));
+  // Add new name as well (deprecated alias)
+  RNSVModule.setProperty(runtime, "createVideoCompositionExtractorSync",
                          std::move(createVideoCompositionFramesExtractorSync));
 
   auto createVideoEncoder = jsi::Function::createFromHostFunction(

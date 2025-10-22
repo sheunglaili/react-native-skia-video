@@ -1,5 +1,6 @@
 #pragma once
 
+#include "AudioSample.h"
 #include "VideoComposition.h"
 #include "VideoFrame.h"
 #include <fbjni/fbjni.h>
@@ -22,6 +23,8 @@ public:
   void start() const;
 
   local_ref<JMap<JString, VideoFrame>> decodeCompositionFrames(jdouble time);
+
+  local_ref<JMap<JString, jobject>> decodeCompositionAudio(jdouble time);
 
   void release() const;
 };

@@ -22,6 +22,14 @@ VideoCompositionFramesExtractorSync::decodeCompositionFrames(jdouble time) {
   return decodeCompositionFramesMethod(self(), time);
 }
 
+local_ref<JMap<JString, jobject>>
+VideoCompositionFramesExtractorSync::decodeCompositionAudio(jdouble time) {
+  static const auto decodeCompositionAudioMethod =
+      getClass()->getMethod<JMap<JString, jobject>(jdouble)>(
+          "decodeCompositionAudio");
+  return decodeCompositionAudioMethod(self(), time);
+}
+
 void VideoCompositionFramesExtractorSync::release() const {
   static const auto releaseMethod = getClass()->getMethod<void()>("release");
   releaseMethod(self());
@@ -47,6 +55,8 @@ VideoCompositionFramesExtractorSyncHostObject::getPropertyNames(
   result.push_back(jsi::PropNameID::forUtf8(rt, std::string("start")));
   result.push_back(
       jsi::PropNameID::forUtf8(rt, std::string("decodeCompositionFrames")));
+  result.push_back(
+      jsi::PropNameID::forUtf8(rt, std::string("decodeCompositionAudio")));
   result.push_back(jsi::PropNameID::forUtf8(rt, std::string("dispose")));
   return result;
 }
@@ -71,6 +81,29 @@ jsi::Value VideoCompositionFramesExtractorSyncHostObject::get(
             auto frame = entry.second;
             auto jsFrame = frame->toJS(runtime);
             result.setProperty(runtime, id.c_str(), std::move(jsFrame));
+          }
+          return result;
+        });
+  } else if (propName == "decodeCompositionAudio") {
+    return jsi::Function::createFromHostFunction(
+        runtime, jsi::PropNameID::forAscii(runtime, "decodeCompositionAudio"),
+        1,
+        [this](jsi::Runtime& runtime, const jsi::Value& thisValue,
+               const jsi::Value* arguments, size_t count) -> jsi::Value {
+          auto result = jsi::Object(runtime);
+          if (released.test()) {
+            return result;
+          }
+          auto time = arguments[0].asNumber();
+          auto audioSamplesMap = framesExtractor->decodeCompositionAudio(time);
+          for (auto& entry : *audioSamplesMap) {
+            auto id = entry.first->toStdString();
+            auto javaAudioSample = entry.second;
+            // Wrap Java AudioSample in C++ AudioSample HostObject
+            auto audioSample = std::make_shared<AudioSample>(javaAudioSample);
+            result.setProperty(
+                runtime, id.c_str(),
+                jsi::Object::createFromHostObject(runtime, audioSample));
           }
           return result;
         });
