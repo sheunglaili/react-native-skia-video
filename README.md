@@ -127,7 +127,48 @@ exportVideoComposition({
 })
 ```
 
-> Please note that the Video Composition system currently does not support sound.
+#### Audio Support
+
+The Video Composition system supports audio encoding. You can provide a `mixAudio` callback to mix audio from multiple video sources:
+
+```js
+const mixAudio = ({ audioSamples, currentTime, videoComposition }) => {
+  'worklet';
+  // audioSamples is a Record<string, AudioSample> keyed by video item ID
+  const video1Audio = audioSamples['video1'];
+  const video2Audio = audioSamples['video2'];
+  
+  // Return the audio buffer you want to encode for this frame
+  // You can mix, process, or select audio as needed
+  if (currentTime < 5 && video1Audio) {
+    return video1Audio.buffer;
+  } else if (video2Audio) {
+    return video2Audio.buffer;
+  }
+  return null; // No audio for this frame
+};
+
+exportVideoComposition({
+  videoComposition,
+  drawFrame,
+  mixAudio, // Add the audio mixer
+  outPath: '/path/to/output',
+  bitRate: 3500000,
+  frameRate: 60,
+  width: 1920,
+  height: 1080,
+  // Optional audio encoding settings (defaults shown):
+  audioSampleRate: 44100,    // Hz
+  audioBitRate: 128000,      // bits per second (128 kbps)
+  audioChannelCount: 2,      // stereo
+})
+```
+
+**Audio Configuration Parameters:**
+- `audioSampleRate` (optional): Sample rate in Hz (default: 44100)
+- `audioBitRate` (optional): Bit rate in bits per second (default: 128000)
+- `audioChannelCount` (optional): Number of channels - 1 for mono, 2 for stereo (default: 2)
+- `mixAudio` (optional): Callback function to mix/process audio samples
 
 
 ### Video Capabilities (Android only)
