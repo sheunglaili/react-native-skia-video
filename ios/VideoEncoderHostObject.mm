@@ -13,12 +13,17 @@ namespace RNSkiaVideo {
 
 VideoEncoderHostObject::VideoEncoderHostObject(std::string outPath, int width,
                                                int height, int frameRate,
-                                               int bitRate) {
+                                               int bitRate, int audioSampleRate,
+                                               int audioChannelCount,
+                                               int audioBitRate) {
   this->outPath = outPath;
   this->width = width;
   this->height = height;
   this->frameRate = frameRate;
   this->bitRate = bitRate;
+  this->audioSampleRate = audioSampleRate;
+  this->audioChannelCount = audioChannelCount;
+  this->audioBitRate = audioBitRate;
 }
 
 std::vector<jsi::PropNameID>
@@ -137,12 +142,12 @@ void VideoEncoderHostObject::prepare() {
     return;
   }
 
-  // Add audio writer input - AAC with hardcoded sensible defaults
+  // Add audio writer input - AAC with configurable settings
   NSDictionary* audioSettings = @{
     AVFormatIDKey : @(kAudioFormatMPEG4AAC),
-    AVSampleRateKey : @(44100),
-    AVNumberOfChannelsKey : @(2),
-    AVEncoderBitRateKey : @(128000)
+    AVSampleRateKey : @(audioSampleRate),
+    AVNumberOfChannelsKey : @(audioChannelCount),
+    AVEncoderBitRateKey : @(audioBitRate)
   };
   
   audioWriterInput =

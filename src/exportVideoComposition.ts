@@ -22,6 +22,11 @@ const OS = Platform.OS;
  *
  * @returns A promise that resolves when the export is complete.
  */
+// Default audio encoding settings
+const DEFAULT_AUDIO_SAMPLE_RATE = 44100;
+const DEFAULT_AUDIO_BIT_RATE = 128000;
+const DEFAULT_AUDIO_CHANNEL_COUNT = 2;
+
 export const exportVideoComposition = async <T = undefined>({
   videoComposition,
   drawFrame,
@@ -72,13 +77,23 @@ export const exportVideoComposition = async <T = undefined>({
       let frameExtractor: VideoCompositionExtractorSync | null = null;
       let encoder: VideoEncoder | null = null;
       const { width, height } = options;
+
+      // Apply audio defaults
+      const encoderOptions: ExportOptions = {
+        ...options,
+        audioSampleRate: options.audioSampleRate ?? DEFAULT_AUDIO_SAMPLE_RATE,
+        audioBitRate: options.audioBitRate ?? DEFAULT_AUDIO_BIT_RATE,
+        audioChannelCount:
+          options.audioChannelCount ?? DEFAULT_AUDIO_CHANNEL_COUNT,
+      };
+
       try {
         surface = Skia.Surface.MakeOffscreen(width, height);
         if (!surface) {
           throw new Error('Failed to create Skia surface');
         }
 
-        encoder = RNSkiaVideoModule.createVideoEncoder(options);
+        encoder = RNSkiaVideoModule.createVideoEncoder(encoderOptions);
         encoder.prepare();
 
         frameExtractor =

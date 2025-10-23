@@ -28,11 +28,6 @@ public class VideoEncoder {
   public static final String AUDIO_MIME_TYPE = "audio/mp4a-latm"; // AAC
 
   public static final int DEFAULT_I_FRAME_INTERVAL_SECONDS = 1;
-  
-  // Audio encoding constants
-  private static final int AUDIO_SAMPLE_RATE = 44100;
-  private static final int AUDIO_CHANNEL_COUNT = 2;
-  private static final int AUDIO_BIT_RATE = 128000; // 128kbps
 
   private final String outputPath;
 
@@ -45,6 +40,12 @@ public class VideoEncoder {
   private final int bitRate;
 
   private final String encoderName;
+
+  private final int audioSampleRate;
+
+  private final int audioChannelCount;
+
+  private final int audioBitRate;
 
   private MediaCodec videoEncoder;
 
@@ -80,6 +81,9 @@ public class VideoEncoder {
    * @param frameRate  the frame rate of the video
    * @param bitRate    the bit rate of the video
    * @param encoderName the name of the encoder to use, or null to use the default encoder
+   * @param audioSampleRate the audio sample rate in Hz
+   * @param audioChannelCount the number of audio channels
+   * @param audioBitRate the audio bit rate in bits per second
    */
   public VideoEncoder(
     String outputPath,
@@ -87,7 +91,10 @@ public class VideoEncoder {
     int height,
     int frameRate,
     int bitRate,
-    String encoderName
+    String encoderName,
+    int audioSampleRate,
+    int audioChannelCount,
+    int audioBitRate
   ) {
     this.outputPath = outputPath;
     this.width = width;
@@ -95,6 +102,9 @@ public class VideoEncoder {
     this.frameRate = frameRate;
     this.bitRate = bitRate;
     this.encoderName = encoderName;
+    this.audioSampleRate = audioSampleRate;
+    this.audioChannelCount = audioChannelCount;
+    this.audioBitRate = audioBitRate;
     videoBufferInfo = new MediaCodec.BufferInfo();
     audioBufferInfo = new MediaCodec.BufferInfo();
   }
@@ -136,9 +146,9 @@ public class VideoEncoder {
     
     audioEncoder = MediaCodec.createEncoderByType(AUDIO_MIME_TYPE);
     
-    MediaFormat audioFormat = MediaFormat.createAudioFormat(AUDIO_MIME_TYPE, AUDIO_SAMPLE_RATE, AUDIO_CHANNEL_COUNT);
+    MediaFormat audioFormat = MediaFormat.createAudioFormat(AUDIO_MIME_TYPE, audioSampleRate, audioChannelCount);
     audioFormat.setInteger(MediaFormat.KEY_AAC_PROFILE, MediaCodecInfo.CodecProfileLevel.AACObjectLC);
-    audioFormat.setInteger(MediaFormat.KEY_BIT_RATE, AUDIO_BIT_RATE);
+    audioFormat.setInteger(MediaFormat.KEY_BIT_RATE, audioBitRate);
     
     audioEncoder.configure(audioFormat, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE);
     audioEncoder.start();

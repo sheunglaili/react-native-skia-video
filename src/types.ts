@@ -428,6 +428,21 @@ export type ExportOptions = {
    * @platform android
    */
   encoderName?: string | null;
+  /**
+   * The audio sample rate in Hz.
+   * @default 44100
+   */
+  audioSampleRate?: number;
+  /**
+   * The audio bit rate in bits per second.
+   * @default 128000
+   */
+  audioBitRate?: number;
+  /**
+   * The number of audio channels.
+   * @default 2 (stereo)
+   */
+  audioChannelCount?: number;
 };
 
 export type RNSkiaVideoModule = {

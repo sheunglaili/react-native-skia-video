@@ -10,7 +10,9 @@ using namespace facebook;
 class JSI_EXPORT VideoEncoderHostObject : public jsi::HostObject {
 public:
   VideoEncoderHostObject(std::string outPath, int width, int height,
-                         int frameRate, int bitRate);
+                         int frameRate, int bitRate,
+                         int audioSampleRate, int audioChannelCount,
+                         int audioBitRate);
   jsi::Value get(jsi::Runtime&, const jsi::PropNameID& name) override;
   std::vector<jsi::PropNameID> getPropertyNames(jsi::Runtime& rt) override;
 
@@ -20,6 +22,9 @@ private:
   int height;
   int bitRate;
   int frameRate;
+  int audioSampleRate;
+  int audioChannelCount;
+  int audioBitRate;
   id<MTLDevice> device;
   id<MTLCommandQueue> commandQueue;
   id<MTLTexture> cpuAccessibleTexture;
