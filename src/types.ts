@@ -231,6 +231,29 @@ export type FrameDrawer<T = undefined> = (args: {
 }) => void;
 
 /**
+ * Function that return a mixed audio sample
+ */
+export type AudioMixer<T = undefined> = (args: {
+  /**
+   * The context created by the `before` function in video composition player.
+   * or in export video composition.
+   */
+  context: T;
+  /**
+   * The current composition
+   */
+  videoComposition: VideoComposition;
+  /**
+   * The current time in seconds of the drawn frame.
+   */
+  currentTime: number;
+  /**
+   * The decoded audio samples from composition items
+   */
+  audioSamples: Record<string, AudioSample>;
+}) => ArrayBuffer | null;
+
+/**
  * The video composition frames extractor interface.
  */
 export type VideoCompositionFramesExtractor = {

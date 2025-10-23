@@ -3,12 +3,12 @@ import { Platform } from 'react-native';
 import { Skia, BlendMode } from '@shopify/react-native-skia';
 import type { SkSurface } from '@shopify/react-native-skia';
 import type {
-  AudioSample,
   ExportOptions,
   FrameDrawer,
   VideoComposition,
   VideoEncoder,
   VideoCompositionExtractorSync,
+  AudioMixer,
 } from './types';
 import RNSkiaVideoModule from './RNSkiaVideoModule';
 import { runOnNewThread } from './utils/thread';
@@ -27,6 +27,7 @@ export const exportVideoComposition = async <T = undefined>({
   drawFrame,
   beforeDrawFrame,
   afterDrawFrame,
+  mixAudio,
   onProgress,
   ...options
 }: {
@@ -50,6 +51,10 @@ export const exportVideoComposition = async <T = undefined>({
    * @param context The context returned by the beforeDrawFrame function.
    */
   afterDrawFrame?: (context: T) => void;
+  /**
+   * The function used to mixed the audios.
+   */
+  mixAudio?: AudioMixer;
   /**
    * A callback that is called when a frame is drawn.
    * @returns
@@ -113,7 +118,12 @@ export const exportVideoComposition = async <T = undefined>({
           encoder.encodeFrame(texture, currentTime);
 
           // Mix and encode audio
-          const mixedAudioBuffer = mixAudioBuffers(audioSamples);
+          const mixedAudioBuffer = mixAudio?.({
+            audioSamples,
+            context,
+            currentTime,
+            videoComposition,
+          });
           if (mixedAudioBuffer) {
             encoder.encodeAudio(mixedAudioBuffer, currentTime);
           }
@@ -145,30 +155,3 @@ export const exportVideoComposition = async <T = undefined>({
       runOnJS(resolve)();
     });
   });
-
-/**
- * Mixes multiple audio samples into a single ArrayBuffer using additive mixing
- * with automatic volume scaling to prevent clipping.
- */
-function mixAudioBuffers(
-  audioSamples: Record<string, AudioSample>
-): ArrayBuffer | null {
-  'worklet';
-  const samples = Object.values(audioSamples);
-  if (samples.length === 0) return null;
-  if (samples.length === 1) return samples[0]?.buffer || null;
-
-  // Simple additive mixing with volume scaling
-  const volumeScale = 1.0 / samples.length;
-  const mixedBuffer = new ArrayBuffer(samples[0]!.buffer.byteLength);
-  const mixedView = new Int16Array(mixedBuffer);
-
-  samples.forEach((sample) => {
-    const view = new Int16Array(sample.buffer);
-    for (let i = 0; i < view.length; i++) {
-      mixedView[i]! += view[i]! * volumeScale;
-    }
-  });
-
-  return mixedBuffer;
-}
