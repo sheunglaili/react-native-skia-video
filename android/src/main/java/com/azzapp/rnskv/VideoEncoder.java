@@ -17,7 +17,8 @@ import javax.microedition.khronos.egl.EGLContext;
 
 
 /**
- * Helper class for encoding video.
+ * Helper class for encoding video and audio.
+ * Uses MediaCodec pipeline for both video (H.264) and audio (AAC) encoding.
  */
 public class VideoEncoder {
 
@@ -27,6 +28,11 @@ public class VideoEncoder {
   public static final String AUDIO_MIME_TYPE = "audio/mp4a-latm"; // AAC
 
   public static final int DEFAULT_I_FRAME_INTERVAL_SECONDS = 1;
+  
+  // Audio encoding constants
+  private static final int AUDIO_SAMPLE_RATE = 44100;
+  private static final int AUDIO_CHANNEL_COUNT = 2;
+  private static final int AUDIO_BIT_RATE = 128000; // 128kbps
 
   private final String outputPath;
 
@@ -40,9 +46,11 @@ public class VideoEncoder {
 
   private final String encoderName;
 
-  private MediaCodec encoder;
+  private MediaCodec videoEncoder;
 
-  private Surface inputSurface;
+  private MediaCodec audioEncoder;
+
+  private Surface videoInputSurface;
 
   private EGLResourcesHolder eglResourcesHolder;
 
@@ -50,12 +58,17 @@ public class VideoEncoder {
 
   private MediaMuxer muxer;
 
-  private int trackIndex;
+  private int videoTrackIndex = -1;
   private int audioTrackIndex = -1;
 
   private boolean muxerStarted;
 
-  private final MediaCodec.BufferInfo bufferInfo;
+  private final MediaCodec.BufferInfo videoBufferInfo;
+  private final MediaCodec.BufferInfo audioBufferInfo;
+
+  // Audio encoding state
+  private boolean audioEncoderInitialized = false;
+  private boolean audioFormatChangeHandled = false;
 
 
   /**
@@ -82,7 +95,8 @@ public class VideoEncoder {
     this.frameRate = frameRate;
     this.bitRate = bitRate;
     this.encoderName = encoderName;
-    bufferInfo = new MediaCodec.BufferInfo();
+    videoBufferInfo = new MediaCodec.BufferInfo();
+    audioBufferInfo = new MediaCodec.BufferInfo();
   }
 
   /**
@@ -90,24 +104,24 @@ public class VideoEncoder {
    */
   public void prepare() throws IOException {
     EGLContext sharedContext = EGLUtils.getCurrentContextOrThrows();
-    encoder = encoderName != null
+    videoEncoder = encoderName != null
       ? MediaCodec.createByCodecName(encoderName)
       : MediaCodec.createEncoderByType(MIME_TYPE);
 
-    MediaFormat format = MediaFormat.createVideoFormat(MIME_TYPE, width, height);
-    format.setInteger(MediaFormat.KEY_COLOR_FORMAT,
+    MediaFormat videoFormat = MediaFormat.createVideoFormat(MIME_TYPE, width, height);
+    videoFormat.setInteger(MediaFormat.KEY_COLOR_FORMAT,
       MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface);
-    format.setInteger(MediaFormat.KEY_BIT_RATE, bitRate);
-    format.setInteger(MediaFormat.KEY_FRAME_RATE, frameRate);
-    format.setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, DEFAULT_I_FRAME_INTERVAL_SECONDS);
+    videoFormat.setInteger(MediaFormat.KEY_BIT_RATE, bitRate);
+    videoFormat.setInteger(MediaFormat.KEY_FRAME_RATE, frameRate);
+    videoFormat.setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, DEFAULT_I_FRAME_INTERVAL_SECONDS);
 
-    encoder.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE);
+    videoEncoder.configure(videoFormat, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE);
 
-    inputSurface = encoder.createInputSurface();
-    eglResourcesHolder = EGLResourcesHolder.createWithWindowedSurface(sharedContext, inputSurface);
+    videoInputSurface = videoEncoder.createInputSurface();
+    eglResourcesHolder = EGLResourcesHolder.createWithWindowedSurface(sharedContext, videoInputSurface);
     eglResourcesHolder.makeCurrent();
     textureRenderer = new TextureRenderer();
-    encoder.start();
+    videoEncoder.start();
 
     try {
       muxer = new MediaMuxer(outputPath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4);
@@ -115,14 +129,21 @@ public class VideoEncoder {
       throw new RuntimeException("MediaMuxer creation failed", ioe);
     }
 
-    trackIndex = -1;
+    videoTrackIndex = -1;
+    audioTrackIndex = -1;
     muxerStarted = false;
 
-    // Add audio track to muxer with hardcoded sensible defaults
-    MediaFormat audioFormat = MediaFormat.createAudioFormat(AUDIO_MIME_TYPE, 44100, 2);
+    
+    audioEncoder = MediaCodec.createEncoderByType(AUDIO_MIME_TYPE);
+    
+    MediaFormat audioFormat = MediaFormat.createAudioFormat(AUDIO_MIME_TYPE, AUDIO_SAMPLE_RATE, AUDIO_CHANNEL_COUNT);
     audioFormat.setInteger(MediaFormat.KEY_AAC_PROFILE, MediaCodecInfo.CodecProfileLevel.AACObjectLC);
-    audioFormat.setInteger(MediaFormat.KEY_BIT_RATE, 128000);
-    audioTrackIndex = muxer.addTrack(audioFormat);
+    audioFormat.setInteger(MediaFormat.KEY_BIT_RATE, AUDIO_BIT_RATE);
+    
+    audioEncoder.configure(audioFormat, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE);
+    audioEncoder.start();
+    audioEncoderInitialized = true;
+    audioFormatChangeHandled = false;
   }
 
   public void makeGLContextCurrent() {
@@ -130,31 +151,129 @@ public class VideoEncoder {
   }
 
   /**
-   * Encodes audio data from an ArrayBuffer.
+   * Encodes audio data from a ByteBuffer.
+   * The audio data should be raw PCM data with sample rate 44100 and 2 channels.
    *
    * @param audioBuffer the audio buffer (DirectByteBuffer containing PCM data)
    * @param time        the presentation time in seconds
    */
   public void encodeAudio(ByteBuffer audioBuffer, double time) {
-    if (audioTrackIndex < 0 || !muxerStarted) {
+    if (!audioEncoderInitialized) {
       return;
     }
 
     long timeUs = TimeHelpers.secToUs(time);
+    
+    int inputBufferIndex = audioEncoder.dequeueInputBuffer(0);
+    if (inputBufferIndex < 0) {
+      return; // No input buffers available, try again later
+    }
 
-    // Create MediaCodec.BufferInfo for audio sample
-    MediaCodec.BufferInfo audioInfo = new MediaCodec.BufferInfo();
-    audioInfo.offset = 0;
-    audioInfo.size = audioBuffer.remaining();
-    audioInfo.presentationTimeUs = timeUs;
-    audioInfo.flags = 0;
+    ByteBuffer inputBuffer = audioEncoder.getInputBuffer(inputBufferIndex);
+    if (inputBuffer == null) {
+      return;
+    }
 
-    // Write audio sample directly to muxer (raw PCM data)
-    // Note: For production, you'd want to encode this to AAC first
-    // For simplicity, we're writing raw PCM which works with some players
-    synchronized (this) {
-      if (muxerStarted) {
-        muxer.writeSampleData(audioTrackIndex, audioBuffer, audioInfo);
+    inputBuffer.clear();
+    inputBuffer.put(audioBuffer);
+    inputBuffer.flip();
+
+    audioEncoder.queueInputBuffer(
+      inputBufferIndex,
+      0,
+      audioBuffer.remaining(),
+      timeUs,
+      0
+    );
+    
+    // Drain the audio encoder output
+    drainAudioEncoder(false);
+  }
+
+  /**
+   * Drains the audio encoder output and writes to muxer.
+   *
+   * @param endOfStream true if this is the end of the stream
+   */
+  private void drainAudioEncoder(boolean endOfStream) {
+    if (!audioEncoderInitialized) {
+      return;
+    }
+
+    final int TIMEOUT_USEC = 10000;
+
+    if (endOfStream) {
+      audioEncoder.signalEndOfInputStream();
+    }
+
+    while (true) {
+      int encoderStatus = audioEncoder.dequeueOutputBuffer(audioBufferInfo, TIMEOUT_USEC);
+      
+      if (encoderStatus == MediaCodec.INFO_TRY_AGAIN_LATER) {
+        // no output available yet
+        if (!endOfStream) {
+          break; // out of while
+        }
+      } else if (encoderStatus == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
+        // Audio format changed - add audio track to muxer
+        if (audioFormatChangeHandled) {
+          throw new RuntimeException("audio format changed twice");
+        }
+        
+        MediaFormat newFormat = audioEncoder.getOutputFormat();
+        audioTrackIndex = muxer.addTrack(newFormat);
+        audioFormatChangeHandled = true;
+        
+        // If both video and audio tracks are ready, start the muxer
+        if (videoTrackIndex >= 0 && audioTrackIndex >= 0 && !muxerStarted) {
+          synchronized (this) {
+            if (!muxerStarted) {
+              muxer.start();
+              muxerStarted = true;
+            }
+          }
+        }
+      } else if (encoderStatus < 0) {
+        Log.w(TAG, "unexpected result from audio encoder.dequeueOutputBuffer: " + encoderStatus);
+        // let's ignore it
+      } else {
+        ByteBuffer encodedData = audioEncoder.getOutputBuffer(encoderStatus);
+        if (encodedData == null) {
+          throw new RuntimeException("audioEncoderOutputBuffer " + encoderStatus + " was null");
+        }
+
+        if ((audioBufferInfo.flags & MediaCodec.BUFFER_FLAG_CODEC_CONFIG) != 0) {
+          // The codec config data was pulled out and fed to the muxer when we got
+          // the INFO_OUTPUT_FORMAT_CHANGED status. Ignore it.
+          audioBufferInfo.size = 0;
+        }
+
+        if (audioBufferInfo.size != 0) {
+          if (!muxerStarted) {
+            // Don't write yet, wait for both tracks to be ready
+            audioEncoder.releaseOutputBuffer(encoderStatus, false);
+            break;
+          }
+
+          // adjust the ByteBuffer values to match BufferInfo
+          encodedData.position(audioBufferInfo.offset);
+          encodedData.limit(audioBufferInfo.offset + audioBufferInfo.size);
+
+          synchronized (this) {
+            if (muxerStarted) {
+              muxer.writeSampleData(audioTrackIndex, encodedData, audioBufferInfo);
+            }
+          }
+        }
+
+        audioEncoder.releaseOutputBuffer(encoderStatus, false);
+
+        if ((audioBufferInfo.flags & MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) {
+          if (!endOfStream) {
+            Log.w(TAG, "reached end of audio stream unexpectedly");
+          }
+          break; // out of while
+        }
       }
     }
   }
@@ -169,27 +288,28 @@ public class VideoEncoder {
     if (!eglResourcesHolder.swapBuffers()) {
       throw new RuntimeException("eglSwapBuffer failed");
     }
-    drainEncoder(false);
+    drainVideoEncoder(false);
   }
 
   public void finishWriting() {
-    drainEncoder(true);
+    drainAudioEncoder(true);
+    drainVideoEncoder(true);
   }
 
   /**
-   * Extracts all pending data from the encoder.
+   * Extracts all pending data from the video encoder.
    *
    * @param endOfStream true if this is the end of the stream
    */
-  private void drainEncoder(boolean endOfStream) {
+  private void drainVideoEncoder(boolean endOfStream) {
     final int TIMEOUT_USEC = 10000;
 
     if (endOfStream) {
-      encoder.signalEndOfInputStream();
+      videoEncoder.signalEndOfInputStream();
     }
 
     while (true) {
-      int encoderStatus = encoder.dequeueOutputBuffer(bufferInfo, TIMEOUT_USEC);
+      int encoderStatus = videoEncoder.dequeueOutputBuffer(videoBufferInfo, TIMEOUT_USEC);
       if (encoderStatus == MediaCodec.INFO_TRY_AGAIN_LATER) {
         // no output available yet
         if (!endOfStream) {
@@ -198,51 +318,61 @@ public class VideoEncoder {
       }
       if (encoderStatus == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
         // should happen before receiving buffers, and should only happen once
-        if (muxerStarted) {
-          throw new RuntimeException("format changed twice");
+        if (videoTrackIndex >= 0) {
+          throw new RuntimeException("video format changed twice");
         }
-        MediaFormat newFormat = encoder.getOutputFormat();
+        MediaFormat newFormat = videoEncoder.getOutputFormat();
 
-        // now that we have the Magic Goodies, start the muxer
-        trackIndex = muxer.addTrack(newFormat);
-        synchronized (this) {
-          muxer.start();
-          muxerStarted = true;
+        // now that we have the Magic Goodies, add video track to muxer
+        videoTrackIndex = muxer.addTrack(newFormat);
+        
+        // If both video and audio tracks are ready, start the muxer
+        if (videoTrackIndex >= 0 && audioTrackIndex >= 0 && !muxerStarted) {
+          synchronized (this) {
+            if (!muxerStarted) {
+              muxer.start();
+              muxerStarted = true;
+            }
+          }
         }
       } else if (encoderStatus < 0) {
-        Log.w(TAG, "unexpected result from encoder.dequeueOutputBuffer: " + encoderStatus);
+        Log.w(TAG, "unexpected result from video encoder.dequeueOutputBuffer: " + encoderStatus);
         // let's ignore it
       } else {
-        ByteBuffer encodedData = encoder.getOutputBuffer(encoderStatus);
+        ByteBuffer encodedData = videoEncoder.getOutputBuffer(encoderStatus);
         if (encodedData == null) {
-          throw new RuntimeException("encoderOutputBuffer " + encoderStatus + " was null");
+          throw new RuntimeException("videoEncoderOutputBuffer " + encoderStatus + " was null");
         }
 
-        if ((bufferInfo.flags & MediaCodec.BUFFER_FLAG_CODEC_CONFIG) != 0) {
+        if ((videoBufferInfo.flags & MediaCodec.BUFFER_FLAG_CODEC_CONFIG) != 0) {
           // The codec config data was pulled out and fed to the muxer when we got
           // the INFO_OUTPUT_FORMAT_CHANGED status.  Ignore it.
-          bufferInfo.size = 0;
+          videoBufferInfo.size = 0;
         }
 
-        if (bufferInfo.size != 0) {
+        if (videoBufferInfo.size != 0) {
           if (!muxerStarted) {
-            throw new RuntimeException("muxer hasn't started");
+            // Don't write yet, wait for both tracks to be ready
+            videoEncoder.releaseOutputBuffer(encoderStatus, false);
+            break;
           }
 
           // adjust the ByteBuffer values to match BufferInfo (not needed?)
-          encodedData.position(bufferInfo.offset);
-          encodedData.limit(bufferInfo.offset + bufferInfo.size);
+          encodedData.position(videoBufferInfo.offset);
+          encodedData.limit(videoBufferInfo.offset + videoBufferInfo.size);
 
           synchronized (this) {
-            muxer.writeSampleData(trackIndex, encodedData, bufferInfo);
+            if (muxerStarted) {
+              muxer.writeSampleData(videoTrackIndex, encodedData, videoBufferInfo);
+            }
           }
         }
 
-        encoder.releaseOutputBuffer(encoderStatus, false);
+        videoEncoder.releaseOutputBuffer(encoderStatus, false);
 
-        if ((bufferInfo.flags & MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) {
+        if ((videoBufferInfo.flags & MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) {
           if (!endOfStream) {
-            Log.w(TAG, "reached end of stream unexpectedly");
+            Log.w(TAG, "reached end of video stream unexpectedly");
           }
           break; // out of while
         }
@@ -257,14 +387,19 @@ public class VideoEncoder {
     if (eglResourcesHolder != null) {
       eglResourcesHolder.release();
     }
-    if (encoder != null) {
-      encoder.stop();
-      encoder.release();
-      encoder = null;
+    if (videoEncoder != null) {
+      videoEncoder.stop();
+      videoEncoder.release();
+      videoEncoder = null;
     }
-    if (inputSurface != null) {
-      inputSurface.release();
-      inputSurface = null;
+    if (audioEncoder != null) {
+      audioEncoder.stop();
+      audioEncoder.release();
+      audioEncoder = null;
+    }
+    if (videoInputSurface != null) {
+      videoInputSurface.release();
+      videoInputSurface = null;
     }
     if (muxer != null) {
       muxer.stop();
