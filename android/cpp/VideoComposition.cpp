@@ -86,6 +86,14 @@ VideoComposition::fromJSIObject(jsi::Runtime& runtime,
                             (int)res.getProperty(runtime, "height").asNumber());
       }
     }
+
+    bool muted = false;
+    if (jsItem.hasProperty(runtime, "muted")) {
+      muted = jsItem.getProperty(runtime, "muted").getBool();
+    }
+    auto itemCls2 = VideoCompositionItem::javaClassStatic();
+    item->setFieldValue(itemCls2->getField<jboolean>("muted"), static_cast<jboolean>(muted));
+
     items->add(item);
   }
   return VideoComposition::create(duration, items);
