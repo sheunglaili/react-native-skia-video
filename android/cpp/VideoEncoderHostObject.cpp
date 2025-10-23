@@ -10,9 +10,11 @@ using namespace facebook::jni;
 
 local_ref<VideoEncoder>
 VideoEncoder::create(std::string& outPath, int width, int height, int frameRate,
-                     int bitRate, std::optional<std::string> encoderName) {
+                     int bitRate, std::optional<std::string> encoderName,
+                     int audioSampleRate, int audioChannelCount, int audioBitRate) {
   return newInstance(outPath, width, height, frameRate, bitRate,
-                     encoderName.has_value() ? encoderName.value() : nullptr);
+                     encoderName.has_value() ? encoderName.value() : nullptr,
+                     audioSampleRate, audioChannelCount, audioBitRate);
 }
 
 void VideoEncoder::prepare() const {
@@ -32,6 +34,12 @@ void VideoEncoder::encodeFrame(jint texture, jdouble time) const {
   encodeFrameMethod(self(), texture, time);
 }
 
+void VideoEncoder::encodeAudio(alias_ref<JByteBuffer> audioBuffer, jdouble time) const {
+  static const auto encodeAudioMethod =
+      getClass()->getMethod<void(alias_ref<JByteBuffer>, jdouble)>("encodeAudio");
+  encodeAudioMethod(self(), audioBuffer, time);
+}
+
 void VideoEncoder::release() const {
   static const auto releaseMethod = getClass()->getMethod<void()>("release");
   releaseMethod(self());
@@ -45,9 +53,11 @@ void VideoEncoder::finishWriting() const {
 
 VideoEncoderHostObject::VideoEncoderHostObject(
     std::string& outPath, int width, int height, int frameRate, int bitRate,
-    std::optional<std::string> encoderName) {
+    std::optional<std::string> encoderName, int audioSampleRate,
+    int audioChannelCount, int audioBitRate) {
   framesExtractor = make_global(VideoEncoder::create(
-      outPath, width, height, frameRate, bitRate, encoderName));
+      outPath, width, height, frameRate, bitRate, encoderName,
+      audioSampleRate, audioChannelCount, audioBitRate));
 }
 
 VideoEncoderHostObject::~VideoEncoderHostObject() {
@@ -59,6 +69,7 @@ VideoEncoderHostObject::getPropertyNames(jsi::Runtime& rt) {
   std::vector<jsi::PropNameID> result;
   result.push_back(jsi::PropNameID::forUtf8(rt, std::string("prepare")));
   result.push_back(jsi::PropNameID::forUtf8(rt, std::string("encodeFrame")));
+  result.push_back(jsi::PropNameID::forUtf8(rt, std::string("encodeAudio")));
   result.push_back(jsi::PropNameID::forUtf8(rt, std::string("finishWriting")));
   result.push_back(jsi::PropNameID::forUtf8(rt, std::string("dispose")));
   return result;
@@ -80,6 +91,31 @@ jsi::Value VideoEncoderHostObject::get(jsi::Runtime& runtime,
 
           framesExtractor->encodeFrame((int)texId, arguments[1].asNumber());
           skiaContextHolder->makeCurrent();
+          return jsi::Value::undefined();
+        });
+  } else if (propName == "encodeAudio") {
+    return jsi::Function::createFromHostFunction(
+        runtime, jsi::PropNameID::forAscii(runtime, "encodeAudio"), 2,
+        [this](jsi::Runtime& runtime, const jsi::Value& thisValue,
+               const jsi::Value* arguments, size_t count) -> jsi::Value {
+          if (count < 2 || !arguments[0].isObject()) {
+            return jsi::Value::undefined();
+          }
+
+          auto arrayBuffer = arguments[0].asObject(runtime).getArrayBuffer(runtime);
+          auto time = arguments[1].asNumber();
+
+          // Get the underlying DirectByteBuffer from the ArrayBuffer
+          // Assuming the ArrayBuffer is backed by a MutableBuffer with JNI ByteBuffer
+          uint8_t* data = arrayBuffer.data(runtime);
+          size_t size = arrayBuffer.size(runtime);
+
+          // Create a JNI ByteBuffer from the ArrayBuffer data
+          auto byteBuffer = JByteBuffer::allocateDirect(size);
+          void* bufferData = byteBuffer->getDirectAddress();
+          std::memcpy(bufferData, data, size);
+
+          framesExtractor->encodeAudio(byteBuffer, time);
           return jsi::Value::undefined();
         });
   } else if (propName == "prepare") {

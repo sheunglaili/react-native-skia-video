@@ -25,6 +25,8 @@ VideoCompositionFramesExtractorSyncHostObject::getPropertyNames(
   result.push_back(jsi::PropNameID::forUtf8(rt, std::string("start")));
   result.push_back(
       jsi::PropNameID::forUtf8(rt, std::string("decodeCompositionFrames")));
+  result.push_back(
+      jsi::PropNameID::forUtf8(rt, std::string("decodeCompositionAudio")));
   result.push_back(jsi::PropNameID::forUtf8(rt, std::string("dispose")));
   return result;
 }
@@ -79,6 +81,37 @@ jsi::Value VideoCompositionFramesExtractorSyncHostObject::get(
           }
           return frames;
         });
+  } else if (propName == "decodeCompositionAudio") {
+    return jsi::Function::createFromHostFunction(
+        runtime, jsi::PropNameID::forAscii(runtime, "decodeCompositionAudio"),
+        1,
+        [this](jsi::Runtime& runtime, const jsi::Value& thisValue,
+               const jsi::Value* arguments, size_t count) -> jsi::Value {
+          auto currentTime =
+              CMTimeMakeWithSeconds(arguments[0].asNumber(), NSEC_PER_SEC);
+          auto audioSamples = jsi::Object(runtime);
+          for (const auto& entry : itemDecoders) {
+            auto itemId = entry.first;
+            auto decoder = entry.second;
+
+            if (!decoder->shouldExtractAudio()) {
+              continue;
+            }
+
+            decoder->advanceAudioDecoder(currentTime);
+
+            auto audioSample = decoder->getAudioSampleForTime(currentTime);
+            if (audioSample) {
+              auto audioSampleObj = std::make_shared<AudioSample>(audioSample);
+              currentAudioSamples[itemId] = audioSampleObj;
+              audioSamples.setProperty(
+                  runtime, entry.first.c_str(),
+                  jsi::Object::createFromHostObject(runtime, audioSampleObj));
+              CFRelease(audioSample);
+            }
+          }
+          return audioSamples;
+        });
   } else if (propName == "dispose") {
     return jsi::Function::createFromHostFunction(
         runtime, jsi::PropNameID::forAscii(runtime, "dispose"), 0,
@@ -103,6 +136,7 @@ void VideoCompositionFramesExtractorSyncHostObject::release() {
   }
   itemDecoders.clear();
   currentFrames.clear();
+  currentAudioSamples.clear();
 }
 
 } // namespace RNSkiaVideo

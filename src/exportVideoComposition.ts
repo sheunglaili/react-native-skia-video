@@ -7,7 +7,8 @@ import type {
   FrameDrawer,
   VideoComposition,
   VideoEncoder,
-  VideoCompositionFramesExtractorSync,
+  VideoCompositionExtractorSync,
+  AudioMixer,
 } from './types';
 import RNSkiaVideoModule from './RNSkiaVideoModule';
 import { runOnNewThread } from './utils/thread';
@@ -21,11 +22,17 @@ const OS = Platform.OS;
  *
  * @returns A promise that resolves when the export is complete.
  */
+// Default audio encoding settings
+const DEFAULT_AUDIO_SAMPLE_RATE = 44100;
+const DEFAULT_AUDIO_BIT_RATE = 128000;
+const DEFAULT_AUDIO_CHANNEL_COUNT = 2;
+
 export const exportVideoComposition = async <T = undefined>({
   videoComposition,
   drawFrame,
   beforeDrawFrame,
   afterDrawFrame,
+  mixAudio,
   onProgress,
   ...options
 }: {
@@ -50,6 +57,10 @@ export const exportVideoComposition = async <T = undefined>({
    */
   afterDrawFrame?: (context: T) => void;
   /**
+   * The function used to mixed the audios.
+   */
+  mixAudio?: AudioMixer;
+  /**
    * A callback that is called when a frame is drawn.
    * @returns
    */
@@ -63,20 +74,30 @@ export const exportVideoComposition = async <T = undefined>({
       'worklet';
 
       let surface: SkSurface | null = null;
-      let frameExtractor: VideoCompositionFramesExtractorSync | null = null;
+      let frameExtractor: VideoCompositionExtractorSync | null = null;
       let encoder: VideoEncoder | null = null;
       const { width, height } = options;
+
+      // Apply audio defaults
+      const encoderOptions: ExportOptions = {
+        ...options,
+        audioSampleRate: options.audioSampleRate ?? DEFAULT_AUDIO_SAMPLE_RATE,
+        audioBitRate: options.audioBitRate ?? DEFAULT_AUDIO_BIT_RATE,
+        audioChannelCount:
+          options.audioChannelCount ?? DEFAULT_AUDIO_CHANNEL_COUNT,
+      };
+
       try {
         surface = Skia.Surface.MakeOffscreen(width, height);
         if (!surface) {
           throw new Error('Failed to create Skia surface');
         }
 
-        encoder = RNSkiaVideoModule.createVideoEncoder(options);
+        encoder = RNSkiaVideoModule.createVideoEncoder(encoderOptions);
         encoder.prepare();
 
         frameExtractor =
-          RNSkiaVideoModule.createVideoCompositionFramesExtractorSync(
+          RNSkiaVideoModule.createVideoCompositionExtractorSync(
             videoComposition
           );
         frameExtractor.start();
@@ -87,6 +108,9 @@ export const exportVideoComposition = async <T = undefined>({
         for (let i = 0; i < nbFrames; i++) {
           const currentTime = i / options.frameRate;
           const frames = frameExtractor.decodeCompositionFrames(currentTime);
+          const audioSamples =
+            frameExtractor.decodeCompositionAudio(currentTime);
+
           canvas.drawColor(clearColor, BlendMode.Clear);
           const context = beforeDrawFrame?.() as any;
           drawFrame({
@@ -107,6 +131,18 @@ export const exportVideoComposition = async <T = undefined>({
           }
           const texture = surface.getNativeTextureUnstable();
           encoder.encodeFrame(texture, currentTime);
+
+          // Mix and encode audio
+          const mixedAudioBuffer = mixAudio?.({
+            audioSamples,
+            context,
+            currentTime,
+            videoComposition,
+          });
+          if (mixedAudioBuffer) {
+            encoder.encodeAudio(mixedAudioBuffer, currentTime);
+          }
+
           afterDrawFrame?.(context);
           if (onProgress) {
             runOnJS(onProgress)({

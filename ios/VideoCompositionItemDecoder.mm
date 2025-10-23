@@ -41,6 +41,12 @@ VideoCompositionItemDecoder::VideoCompositionItemDecoder(
   if (!mtlTexture) {
     throw std::runtime_error("Failed to create persistent Metal texture!");
   }
+
+  // Initialize audio track if not muted
+  audioTrack = [[asset tracksWithMediaType:AVMediaTypeAudio] firstObject];
+  if (audioTrack && !item->muted) {
+    this->setupAudioReader(kCMTimeZero);
+  }
 }
 
 void VideoCompositionItemDecoder::setupReader(CMTime initialTime) {
@@ -216,7 +222,164 @@ void VideoCompositionItemDecoder::release() {
     [mtlTexture setPurgeableState:MTLPurgeableStateEmpty];
     currentFrame = nullptr;
     mtlTexture = nil;
+
+    // Audio cleanup
+    if (audioReader) {
+      [audioReader cancelReading];
+      audioReader = nullptr;
+    }
+    for (const auto& sample : decodedAudioSamples) {
+      CFRelease(sample.second);
+    }
+    decodedAudioSamples.clear();
+    for (const auto& sample : nextLoopAudioSamples) {
+      CFRelease(sample.second);
+    }
+    nextLoopAudioSamples.clear();
+    audioHasLooped = false;
+    lastAudioRequestedTime = kCMTimeInvalid;
+    audioTrack = nil;
   }
+}
+
+void VideoCompositionItemDecoder::setupAudioReader(CMTime initialTime) {
+  if (!audioTrack) return;
+
+  NSError* error = nil;
+  audioReader = [AVAssetReader assetReaderWithAsset:asset error:&error];
+  if (error) {
+    throw error;
+  }
+
+  auto startTime = CMTimeMakeWithSeconds(item->startTime, NSEC_PER_SEC);
+  auto position = CMTimeMakeWithSeconds(
+      MAX((CMTimeGetSeconds(initialTime) - item->compositionStartTime), 0),
+      NSEC_PER_SEC);
+  audioReader.timeRange = CMTimeRangeMake(
+      CMTimeAdd(startTime, position),
+      CMTimeSubtract(CMTimeMakeWithSeconds(item->duration, NSEC_PER_SEC),
+                     position));
+
+  // Audio output settings - Linear PCM for ArrayBuffer compatibility
+  NSDictionary* audioSettings = @{
+    AVFormatIDKey : @(kAudioFormatLinearPCM),
+    AVSampleRateKey : @(44100),
+    AVNumberOfChannelsKey : @(2),
+    AVLinearPCMBitDepthKey : @(16),
+    AVLinearPCMIsFloatKey : @(NO),
+    AVLinearPCMIsBigEndianKey : @(NO),
+    AVLinearPCMIsNonInterleaved : @(NO)
+  };
+
+  AVAssetReaderOutput* audioReaderOutput =
+      [[AVAssetReaderTrackOutput alloc] initWithTrack:audioTrack
+                                       outputSettings:audioSettings];
+  [audioReader addOutput:audioReaderOutput];
+  [audioReader startReading];
+}
+
+void VideoCompositionItemDecoder::advanceAudioDecoder(CMTime currentTime) {
+  if (!audioTrack || item->muted) return;
+
+  @synchronized(lock) {
+    CMTime startTime = CMTimeMakeWithSeconds(item->startTime, NSEC_PER_SEC);
+    CMTime compositionStartTime =
+        CMTimeMakeWithSeconds(item->compositionStartTime, NSEC_PER_SEC);
+    CMTime position =
+        CMTimeAdd(startTime, CMTimeSubtract(currentTime, compositionStartTime));
+    CMTime inputPosition =
+        realTime
+            ? CMTimeAdd(position, CMTimeMakeWithSeconds(
+                                      DECODER_INPUT_TIME_ADVANCE, NSEC_PER_SEC))
+            : position;
+    CMTime duration = CMTimeMakeWithSeconds(item->duration, NSEC_PER_SEC);
+    CMTime endTime = CMTimeAdd(startTime, duration);
+
+    if (realTime && CMTimeCompare(endTime, inputPosition) < 0 && !audioHasLooped) {
+      setupAudioReader(kCMTimeZero);
+      audioHasLooped = true;
+      inputPosition =
+          CMTimeAdd(position, CMTimeMakeWithSeconds(DECODER_INPUT_TIME_ADVANCE,
+                                                    NSEC_PER_SEC));
+    }
+
+    auto audioQueue = audioHasLooped ? &nextLoopAudioSamples : &decodedAudioSamples;
+    CMTime latestSampleTime = kCMTimeInvalid;
+    if (audioQueue->size() > 0) {
+      latestSampleTime =
+          CMTimeMakeWithSeconds(audioQueue->back().first, NSEC_PER_SEC);
+    }
+
+    while (!CMTIME_IS_VALID(latestSampleTime) ||
+           (CMTimeCompare(latestSampleTime, inputPosition) < 0 &&
+            CMTimeCompare(endTime, inputPosition) >= 0)) {
+      if (audioReader.status != AVAssetReaderStatusReading) {
+        break;
+      }
+      AVAssetReaderOutput* audioReaderOutput =
+          [audioReader.outputs firstObject];
+      CMSampleBufferRef audioSampleBuffer = [audioReaderOutput copyNextSampleBuffer];
+      if (!audioSampleBuffer) {
+        break;
+      }
+      if (CMSampleBufferGetNumSamples(audioSampleBuffer) == 0) {
+        CFRelease(audioSampleBuffer);
+        continue;
+      }
+      auto timeStamp = CMSampleBufferGetPresentationTimeStamp(audioSampleBuffer);
+      auto audioBuffer = CMSampleBufferGetDataBuffer(audioSampleBuffer);
+      if (audioBuffer) {
+        audioQueue->push_back(
+            std::make_pair(CMTimeGetSeconds(timeStamp), audioSampleBuffer));
+      } else {
+        CFRelease(audioSampleBuffer);
+      }
+
+      latestSampleTime = timeStamp;
+    }
+  }
+}
+
+CMSampleBufferRef VideoCompositionItemDecoder::getAudioSampleForTime(CMTime currentTime) {
+  if (!audioTrack || item->muted) return nil;
+
+  if (audioHasLooped && CMTIME_IS_VALID(lastAudioRequestedTime) &&
+      CMTimeCompare(currentTime, lastAudioRequestedTime) < 0) {
+    audioHasLooped = false;
+    for (const auto& sample : decodedAudioSamples) {
+      CFRelease(sample.second);
+    }
+    decodedAudioSamples = nextLoopAudioSamples;
+    nextLoopAudioSamples.clear();
+  }
+  lastAudioRequestedTime = currentTime;
+
+  CMTime position = CMTimeAdd(
+      CMTimeMakeWithSeconds(item->startTime, NSEC_PER_SEC),
+      CMTimeMakeWithSeconds(
+          MAX((CMTimeGetSeconds(currentTime) - item->compositionStartTime), 0),
+          NSEC_PER_SEC));
+
+  CMSampleBufferRef nextAudioSample = nil;
+  auto it = decodedAudioSamples.begin();
+  while (it != decodedAudioSamples.end()) {
+    auto timestamp = CMTimeMakeWithSeconds(it->first, NSEC_PER_SEC);
+    if (CMTimeCompare(timestamp, position) <= 0) {
+      if (nextAudioSample != nullptr) {
+        CFRelease(nextAudioSample);
+      }
+      nextAudioSample = it->second;
+      it = decodedAudioSamples.erase(it);
+    } else {
+      break;
+    }
+  }
+
+  return nextAudioSample;
+}
+
+bool VideoCompositionItemDecoder::shouldExtractAudio() {
+  return !item->muted && audioTrack != nil;
 }
 
 } // namespace RNSkiaVideo

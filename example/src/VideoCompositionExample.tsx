@@ -22,6 +22,7 @@ import {
   exportVideoComposition,
   getValidEncoderConfigurations,
   useVideoCompositionPlayer,
+  type AudioMixer,
 } from '@azzapp/react-native-skia-video';
 import {
   type FrameDrawer,
@@ -69,10 +70,39 @@ const VideoCompositionExample = () => {
 
 export default VideoCompositionExample;
 
+const TEST_VIDEO_WITH_AUDIO: Video = {
+  id: 999999,
+  width: 1920,
+  height: 1080,
+  duration: 15,
+  url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4',
+  image: 'https://placehold.co/400x300.png?text=Test+Video',
+  video_files: [
+    {
+      id: 999999,
+      quality: 'hd' as const,
+      file_type: 'string',
+      width: 1920,
+      height: 1080,
+      link: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4',
+      fps: 30,
+    },
+  ],
+  video_pictures: [],
+  full_res: null,
+  tags: [],
+  user: {
+    id: 0,
+    name: 'Test User',
+    url: '',
+  },
+};
+
 const PexelsVideoPicker = ({
   navigation,
 }: NativeStackScreenProps<StackParamList>) => {
-  const [videos, setVideos] = useState<Video[]>([]);
+  // Hardcoded test video for audio export testing
+  const [videos, setVideos] = useState<Video[]>([TEST_VIDEO_WITH_AUDIO]);
   const [selectedVideos, setSelectedVideos] = useState<Set<number>>(new Set());
   const [page, setPage] = useState(1);
   const isLoading = useRef(true);
@@ -95,14 +125,15 @@ const PexelsVideoPicker = ({
   const { width: windowWidth } = useWindowDimensions();
 
   const loadVideos = useCallback(async (page: number) => {
-    const response = await pexelsClient.videos.popular({ per_page: 50, page });
+    const response = await pexelsClient.videos.popular({
+      per_page: 50,
+      page,
+    });
     if ('error' in response) {
       console.error(response.error);
       return;
     }
-    setVideos((videos) =>
-      page === 1 ? response.videos : [...videos, ...response.videos]
-    );
+    setVideos((videos) => [...videos, ...response.videos]);
     isLoading.current = false;
   }, []);
 
@@ -226,6 +257,27 @@ const drawFrame: FrameDrawer = ({
       paint
     );
   }
+};
+
+const mixAudio: AudioMixer = ({ audioSamples }) => {
+  'worklet';
+  const samples = Object.values(audioSamples);
+  if (samples.length === 0) return null;
+  if (samples.length === 1) return samples[0]?.buffer || null;
+
+  // Simple additive mixing with volume scaling
+  const volumeScale = 1.0 / samples.length;
+  const mixedBuffer = new ArrayBuffer(samples[0]!.buffer.byteLength);
+  const mixedView = new Int16Array(mixedBuffer);
+
+  samples.forEach((sample) => {
+    const view = new Int16Array(sample.buffer);
+    for (let i = 0; i < view.length; i++) {
+      mixedView[i]! += view[i]! * volumeScale;
+    }
+  });
+
+  return mixedBuffer;
 };
 
 const VideoCompositionPreview = ({
@@ -352,6 +404,7 @@ const VideoCompositionPreview = ({
       exportVideoComposition({
         videoComposition,
         drawFrame,
+        mixAudio,
         onProgress: (progress) =>
           setExportProgress(progress.framesCompleted / progress.nbFrames),
         outPath,

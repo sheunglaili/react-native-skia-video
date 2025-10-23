@@ -188,6 +188,11 @@ export type VideoCompositionItem = {
    * Downscaling the video can improve performance.
    */
   resolution?: { width: number; height: number };
+  /**
+   * If true, the audio from this video item will be muted during export.
+   * Defaults to false.
+   */
+  muted?: boolean;
 };
 
 /**
@@ -224,6 +229,29 @@ export type FrameDrawer<T = undefined> = (args: {
    */
   height: number;
 }) => void;
+
+/**
+ * Function that return a mixed audio sample
+ */
+export type AudioMixer<T = undefined> = (args: {
+  /**
+   * The context created by the `before` function in video composition player.
+   * or in export video composition.
+   */
+  context: T;
+  /**
+   * The current composition
+   */
+  videoComposition: VideoComposition;
+  /**
+   * The current time in seconds of the drawn frame.
+   */
+  currentTime: number;
+  /**
+   * The decoded audio samples from composition items
+   */
+  audioSamples: Record<string, AudioSample>;
+}) => ArrayBuffer | null;
 
 /**
  * The video composition frames extractor interface.
@@ -284,9 +312,35 @@ export type VideoCompositionFramesExtractor = {
 };
 
 /**
- * The video composition sync extractor interface.
+ * Represents an audio sample.
  */
-export type VideoCompositionFramesExtractorSync = {
+export type AudioSample = {
+  /**
+   * The audio data as an ArrayBuffer (zero-copy reference to native memory).
+   */
+  buffer: ArrayBuffer;
+  /**
+   * The duration in seconds of the audio sample.
+   */
+  duration: number;
+  /**
+   * The sample rate of the audio (e.g., 44100, 48000).
+   */
+  sampleRate: number;
+  /**
+   * The number of audio channels (1 = mono, 2 = stereo).
+   */
+  channels: number;
+  /**
+   * The presentation time in seconds.
+   */
+  presentationTime: number;
+};
+
+/**
+ * The video composition extractor interface (supports both video and audio).
+ */
+export type VideoCompositionExtractorSync = {
   /**
    * Starts extracting the frames of the video composition.
    */
@@ -299,10 +353,23 @@ export type VideoCompositionFramesExtractorSync = {
    */
   decodeCompositionFrames(currentTime: number): Record<string, VideoFrame>;
   /**
-   * Disposes of the video composition frames extractor.
+   * Decodes the audio samples until reaching the specified time.
+   * This method will block the current thread until the audio samples are decoded.
+   *
+   * @returns The decoded audio samples of the composition items.
+   */
+  decodeCompositionAudio(currentTime: number): Record<string, AudioSample>;
+  /**
+   * Disposes of the video composition extractor.
    */
   dispose(): void;
 };
+
+/**
+ * @deprecated Use VideoCompositionExtractorSync instead.
+ * The video composition sync extractor interface.
+ */
+export type VideoCompositionFramesExtractorSync = VideoCompositionExtractorSync;
 
 /**
  * The video composition encoder interface.
@@ -316,6 +383,12 @@ export type VideoEncoder = {
    * Encodes the video frame to the video composition.
    */
   encodeFrame(texture: unknown, time: number): void;
+  /**
+   * Encodes audio data to the video composition.
+   * @param buffer The audio data as an ArrayBuffer.
+   * @param time The presentation time in seconds.
+   */
+  encodeAudio(buffer: ArrayBuffer, time: number): void;
   /*
    * Finish writing the video to the output file.
    */
@@ -355,6 +428,21 @@ export type ExportOptions = {
    * @platform android
    */
   encoderName?: string | null;
+  /**
+   * The audio sample rate in Hz.
+   * @default 44100
+   */
+  audioSampleRate?: number;
+  /**
+   * The audio bit rate in bits per second.
+   * @default 128000
+   */
+  audioBitRate?: number;
+  /**
+   * The number of audio channels.
+   * @default 2 (stereo)
+   */
+  audioChannelCount?: number;
 };
 
 export type RNSkiaVideoModule = {
@@ -383,6 +471,19 @@ export type RNSkiaVideoModule = {
     composition: VideoComposition
   ) => VideoCompositionFramesExtractor;
   /**
+   * Creates a synchronous video composition extractor for the specified video composition.
+   * @param composition The video composition.
+   * @returns The video composition extractor.
+   */
+  createVideoCompositionExtractorSync: (
+    /**
+     * The video composition to extract frames and audio from.
+     */
+    composition: VideoComposition
+  ) => VideoCompositionExtractorSync;
+
+  /**
+   * @deprecated Use createVideoCompositionExtractorSync instead.
    * Creates a synchronous video composition frames extractor for the specified video composition.
    * @param composition The video composition.
    * @returns The video composition frames extractor.

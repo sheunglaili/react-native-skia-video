@@ -1,5 +1,6 @@
 #pragma once
 
+#import "AudioSample.h"
 #import "VideoComposition.h"
 #import "VideoCompositionItemDecoder.h"
 #import "VideoFrame.h"
@@ -24,6 +25,7 @@ private:
   std::map<std::string, std::shared_ptr<VideoCompositionItemDecoder>>
       itemDecoders;
   std::map<std::string, std::shared_ptr<VideoFrame>> currentFrames;
+  std::map<std::string, std::shared_ptr<AudioSample>> currentAudioSamples;
   void release();
 };
 
