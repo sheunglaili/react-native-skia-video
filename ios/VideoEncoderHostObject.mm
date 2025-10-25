@@ -154,8 +154,11 @@ void VideoEncoderHostObject::prepare() {
       [AVAssetWriterInput assetWriterInputWithMediaType:AVMediaTypeAudio
                                          outputSettings:audioSettings];
   audioWriterInput.expectsMediaDataInRealTime = NO;
+  audioWriterInput.performsMultiPassEncodingIfSupported = YES;
   if ([assetWriter canAddInput:audioWriterInput]) {
     [assetWriter addInput:audioWriterInput];
+  } else {
+    NSLog(@"Could not add audio input to asset writer: %@", assetWriter.error.localizedDescription);
   }
 
   [assetWriter startWriting];
@@ -266,45 +269,77 @@ void VideoEncoderHostObject::encodeFrame(id<MTLTexture> mlTexture,
 }
 
 void VideoEncoderHostObject::encodeAudioBuffer(uint8_t* audioData, size_t audioDataSize, CMTime time) {
-  if (!audioWriterInput || !audioWriterInput.isReadyForMoreMediaData) {
+  if (!audioWriterInput) {
+    NSLog(@"Audio writer input is null");
+    return;
+  }
+  
+  if (!audioWriterInput.isReadyForMoreMediaData) {
+    NSLog(@"Audio writer input not ready for more data");
     return;
   }
 
   if (audioDataSize == 0 || audioData == nullptr) {
+    NSLog(@"Invalid audio data: size=%zu, data=%p", audioDataSize, audioData);
     return;
+  }
+  
+  // Check for memory pressure before processing
+  if (audioDataSize > 1024 * 1024) {  // If buffer is larger than 1MB
+    NSLog(@"Large audio buffer detected: %zu bytes at time %.2f", audioDataSize, CMTimeGetSeconds(time));
   }
 
   // Create CMBlockBuffer from ArrayBuffer data (copy required for async processing)
+  // Use a more memory-efficient approach for long audio encoding
   CMBlockBufferRef blockBuffer = NULL;
-  OSStatus status = CMBlockBufferCreateWithMemoryBlock(
+  
+  // Try to create block buffer with existing memory first (more efficient)
+  status = CMBlockBufferCreateWithMemoryBlock(
       kCFAllocatorDefault,
-      NULL,  // Allocate new memory
+      (void*)audioData,  // Use existing memory instead of allocating new
       audioDataSize,
       kCFAllocatorDefault,
       NULL,
       0,
       audioDataSize,
-      0,
+      kCMBlockBufferFlag_DontCopyMemory,  // Don't copy, use existing memory
       &blockBuffer);
 
   if (status != noErr || !blockBuffer) {
-    return;
-  }
-
-  // Copy data from ArrayBuffer to CMBlockBuffer
-  status = CMBlockBufferReplaceDataBytes(audioData, blockBuffer, 0, audioDataSize);
-  if (status != noErr) {
-    CFRelease(blockBuffer);
-    return;
+    // Fallback: allocate new memory if the above fails
+    NSLog(@"Failed to create CMBlockBuffer with existing memory, trying fallback: %d", (int)status);
+    status = CMBlockBufferCreateWithMemoryBlock(
+        kCFAllocatorDefault,
+        NULL,  // Allocate new memory
+        audioDataSize,
+        kCFAllocatorDefault,
+        NULL,
+        0,
+        audioDataSize,
+        kCMBlockBufferFlag_AssureMemoryNow,
+        &blockBuffer);
+    
+    if (status != noErr || !blockBuffer) {
+      NSLog(@"Failed to create CMBlockBuffer with fallback: %d", (int)status);
+      return;
+    }
+    
+    // Copy data from ArrayBuffer to CMBlockBuffer
+    status = CMBlockBufferReplaceDataBytes(audioData, blockBuffer, 0, audioDataSize);
+    if (status != noErr) {
+      NSLog(@"Failed to copy audio data to CMBlockBuffer: %d", (int)status);
+      CFRelease(blockBuffer);
+      return;
+    }
   }
 
   // Create audio format description for Linear PCM (matching our decoder output)
   AudioStreamBasicDescription asbd = {0};
-  asbd.mSampleRate = 44100;
+  asbd.mSampleRate = audioSampleRate;  // Use constructor parameter
   asbd.mFormatID = kAudioFormatLinearPCM;
   asbd.mFormatFlags = kLinearPCMFormatFlagIsSignedInteger | kLinearPCMFormatFlagIsPacked;
   asbd.mBitsPerChannel = 16;
-  asbd.mChannelsPerFrame = 2;
+  asbd.mChannelsPerFrame = audioChannelCount;  // Use constructor parameter
   asbd.mBytesPerFrame = asbd.mChannelsPerFrame * (asbd.mBitsPerChannel / 8);
   asbd.mFramesPerPacket = 1;
   asbd.mBytesPerPacket = asbd.mBytesPerFrame * asbd.mFramesPerPacket;
@@ -348,10 +383,22 @@ void VideoEncoderHostObject::encodeAudioBuffer(uint8_t* audioData, size_t audioD
 
   // Append to audio writer input
   if ([audioWriterInput isReadyForMoreMediaData]) {
-    [audioWriterInput appendSampleBuffer:sampleBuffer];
+    BOOL success = [audioWriterInput appendSampleBuffer:sampleBuffer];
+    if (!success) {
+      NSLog(@"Failed to append audio sample buffer. Writer status: %ld", (long)assetWriter.status);
+      if (assetWriter.status == AVAssetWriterStatusFailed) {
+        NSLog(@"Asset writer failed: %@", assetWriter.error.localizedDescription);
+      }
+    }
+  } else {
+    NSLog(@"Audio writer input not ready for more media data");
   }
 
+  // CRITICAL: Always release the sample buffer to prevent memory leaks
   CFRelease(sampleBuffer);
+  
+  // CRITICAL: Always release the block buffer to prevent memory accumulation
+  CFRelease(blockBuffer);
 }
 
 void VideoEncoderHostObject::finish() {
