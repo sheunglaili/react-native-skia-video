@@ -17,6 +17,9 @@ public:
   void seekTo(CMTime currentTime);
   std::shared_ptr<VideoFrame> acquireFrameForTime(CMTime currentTime,
                                                   bool force);
+  void advanceAudioDecoder(CMTime currentTime);
+  CMSampleBufferRef getAudioSampleForTime(CMTime currentTime);
+  bool shouldExtractAudio();
   void release();
 
 private:
@@ -36,7 +39,15 @@ private:
   CMTime lastRequestedTime = kCMTimeInvalid;
   std::shared_ptr<VideoFrame> currentFrame;
 
+  AVAssetTrack* audioTrack;
+  AVAssetReader* audioReader;
+  std::list<std::pair<double, CMSampleBufferRef>> decodedAudioSamples;
+  std::list<std::pair<double, CMSampleBufferRef>> nextLoopAudioSamples;
+  CMTime lastAudioRequestedTime = kCMTimeInvalid;
+  bool audioHasLooped = false;
+
   void setupReader(CMTime initialTime);
+  void setupAudioReader(CMTime initialTime);
 };
 
 } // namespace RNSkiaVideo

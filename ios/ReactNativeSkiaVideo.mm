@@ -119,6 +119,9 @@ RCT_EXPORT_BLOCKING_SYNCHRONOUS_METHOD(install) {
           });
 
   RNSVModule.setProperty(runtime, "createVideoCompositionFramesExtractorSync",
+                         jsi::Value(runtime, createVideoCompositionFramesExtractorSync));
+  // Add new name as well (deprecated alias)
+  RNSVModule.setProperty(runtime, "createVideoCompositionExtractorSync",
                          std::move(createVideoCompositionFramesExtractorSync));
 
   auto createVideoEncoder = jsi::Function::createFromHostFunction(
@@ -138,9 +141,15 @@ RCT_EXPORT_BLOCKING_SYNCHRONOUS_METHOD(install) {
         int height = options.getProperty(runtime, "height").asNumber();
         int frameRate = options.getProperty(runtime, "frameRate").asNumber();
         int bitRate = options.getProperty(runtime, "bitRate").asNumber();
+        
+        // Audio configuration (defaults are applied in TypeScript)
+        int audioSampleRate = (int)options.getProperty(runtime, "audioSampleRate").asNumber();
+        int audioChannelCount = (int)options.getProperty(runtime, "audioChannelCount").asNumber();
+        int audioBitRate = (int)options.getProperty(runtime, "audioBitRate").asNumber();
 
         auto instance = std::make_shared<VideoEncoderHostObject>(
-            outPath, width, height, frameRate, bitRate);
+            outPath, width, height, frameRate, bitRate,
+            audioSampleRate, audioChannelCount, audioBitRate);
         return jsi::Object::createFromHostObject(runtime, instance);
       });
   RNSVModule.setProperty(runtime, "createVideoEncoder",

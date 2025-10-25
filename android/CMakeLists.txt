@@ -20,6 +20,8 @@ add_library(${PACKAGE_NAME}
         SHARED
         ../cpp/EventEmitter.h
         ../cpp/EventEmitter.cpp
+        cpp/AudioSample.h
+        cpp/AudioSample.cpp
         cpp/JNIHelpers.h
         cpp/JNIHelpers.cpp
         cpp/cpp-adapter.cpp
@@ -111,4 +113,10 @@ else()
                 -lEGL
                 -landroid
         )
+endif()
+
+
+# Enable Android 16kb native library alignment
+if(CMAKE_ANDROID_NDK_VERSION VERSION_LESS "27")
+    target_link_options(${PACKAGE_NAME} PRIVATE "-Wl,-z,max-page-size=16384")
 endif()

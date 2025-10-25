@@ -13,6 +13,7 @@ public:
   double startTime;
   double duration;
   CGSize resolution;
+  bool muted = false;
 };
 
 class VideoComposition {
@@ -49,6 +50,11 @@ public:
           item->resolution.height =
               res.getProperty(runtime, "height").asNumber();
         }
+      }
+
+      item->muted = false;
+      if (jsItem.hasProperty(runtime, "muted")) {
+        item->muted = jsItem.getProperty(runtime, "muted").getBool();
       }
 
       composition->items.push_back(item);

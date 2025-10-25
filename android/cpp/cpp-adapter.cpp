@@ -86,6 +86,10 @@ void install(jsi::Runtime& jsiRuntime) {
 
   RNSVModule.setProperty(jsiRuntime,
                          "createVideoCompositionFramesExtractorSync",
+                         jsi::Value(jsiRuntime, createVideoCompositionFramesExtractorSync));
+  // Add new name as well (deprecated alias)
+  RNSVModule.setProperty(jsiRuntime,
+                         "createVideoCompositionExtractorSync",
                          std::move(createVideoCompositionFramesExtractorSync));
 
   auto createVideoEncoder = jsi::Function::createFromHostFunction(
@@ -115,9 +119,15 @@ void install(jsi::Runtime& jsiRuntime) {
             encoderName = value.asString(runtime).utf8(runtime);
           }
         }
+        
+        // Audio configuration (defaults are applied in TypeScript)
+        int audioSampleRate = (int)options.getProperty(runtime, "audioSampleRate").asNumber();
+        int audioChannelCount = (int)options.getProperty(runtime, "audioChannelCount").asNumber();
+        int audioBitRate = (int)options.getProperty(runtime, "audioBitRate").asNumber();
 
         auto instance = std::make_shared<VideoEncoderHostObject>(
-            outPath, width, height, frameRate, bitRate, encoderName);
+            outPath, width, height, frameRate, bitRate, encoderName,
+            audioSampleRate, audioChannelCount, audioBitRate);
         return jsi::Object::createFromHostObject(runtime, instance);
       });
   RNSVModule.setProperty(jsiRuntime, "createVideoEncoder",

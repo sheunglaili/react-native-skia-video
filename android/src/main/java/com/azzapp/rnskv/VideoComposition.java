@@ -35,6 +35,7 @@ public class VideoComposition {
     private double duration;
     private int width = -1;
     private int height = -1;
+    private boolean muted = false;
 
     public Item() {
     }
@@ -79,6 +80,14 @@ public class VideoComposition {
 
     public int getHeight() {
       return height;
+    }
+
+    public boolean isMuted() {
+      return muted;
+    }
+
+    public void setMuted(boolean muted) {
+      this.muted = muted;
     }
   }
 }
