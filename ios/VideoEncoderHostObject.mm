@@ -294,7 +294,7 @@ void VideoEncoderHostObject::encodeAudioBuffer(uint8_t* audioData, size_t audioD
   CMBlockBufferRef blockBuffer = NULL;
   
   // Try to create block buffer with existing memory first (more efficient)
-  status = CMBlockBufferCreateWithMemoryBlock(
+  OSStatus status = CMBlockBufferCreateWithMemoryBlock(
       kCFAllocatorDefault,
       (void*)audioData,  // Use existing memory instead of allocating new
       audioDataSize,
