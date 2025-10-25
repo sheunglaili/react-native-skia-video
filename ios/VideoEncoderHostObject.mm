@@ -302,7 +302,7 @@ void VideoEncoderHostObject::encodeAudioBuffer(uint8_t* audioData, size_t audioD
       NULL,
       0,
       audioDataSize,
-      kCMBlockBufferFlag_DontCopyMemory,  // Don't copy, use existing memory
+      0,  // No flags - use existing memory without copying
       &blockBuffer);
 
   if (status != noErr || !blockBuffer) {
@@ -316,7 +316,7 @@ void VideoEncoderHostObject::encodeAudioBuffer(uint8_t* audioData, size_t audioD
         NULL,
         0,
         audioDataSize,
-        kCMBlockBufferFlag_AssureMemoryNow,
+        kCMBlockBufferAssureMemoryNowFlag,  // Valid flag to ensure memory is allocated now
         &blockBuffer);
     
     if (status != noErr || !blockBuffer) {
