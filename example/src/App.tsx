@@ -60,7 +60,7 @@ function App() {
       <Stack.Navigator>
         <Stack.Screen
           name="Home"
-          options={{ title: '@sheunglaili/react-native-skia-video' }}
+          options={{ title: '@azzapp/react-native-skia-video' }}
           component={HomeScreen}
         />
         <Stack.Screen

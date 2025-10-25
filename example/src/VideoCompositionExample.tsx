@@ -23,7 +23,7 @@ import {
   getValidEncoderConfigurations,
   useVideoCompositionPlayer,
   type AudioMixer,
-} from '@azzapp/react-native-skia-video';
+} from '@sheunglaili/react-native-skia-video';
 import {
   type FrameDrawer,
   type VideoComposition,
