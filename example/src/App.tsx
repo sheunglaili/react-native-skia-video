@@ -7,7 +7,7 @@ import {
 import VideoPlayerExample from './VideoPlayerExample';
 import VideoCompositionExample from './VideoCompositionExample';
 import { useEffect, useState } from 'react';
-import { getDecodingCapabilitiesFor } from '@azzapp/react-native-skia-video';
+import { getDecodingCapabilitiesFor } from '@sheunglaili/react-native-skia-video';
 
 type RootStackParamList = {
   Home: undefined;
