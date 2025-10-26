@@ -1,6 +1,6 @@
 {
   "name": "@sheunglaili/react-native-skia-video",
-  "version": "0.11.5",
+  "version": "0.11.6",
   "description": "video support for react-native-skia",
   "main": "lib/commonjs/index",
   "module": "lib/module/index",
