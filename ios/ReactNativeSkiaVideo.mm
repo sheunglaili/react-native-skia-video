@@ -100,21 +100,33 @@ RCT_EXPORT_BLOCKING_SYNCHRONOUS_METHOD(install) {
           runtime,
           jsi::PropNameID::forAscii(
               runtime, "createVideoCompositionFramesExtractorSync"),
-          1,
+          3,
           [bridge](jsi::Runtime& runtime, const jsi::Value& thisValue,
                    const jsi::Value* arguments, size_t count) -> jsi::Value {
-            if (count != 1 || !arguments[0].isObject()) {
+            if (count < 1 || !arguments[0].isObject()) {
               throw jsi::JSError(runtime,
                                  "ReactNativeSkiaVideo."
                                  "createVideoCompositionFramesExtractorSync(..)"
-                                 " expects one arguments (object)!");
+                                 " expects at least one argument (object)!");
             }
 
             jsi::Object jsObject = arguments[0].asObject(runtime);
             auto videoComposition = VideoComposition::fromJS(runtime, jsObject);
+            
+            // Extract audio settings from arguments 2 and 3, with defaults
+            int audioSampleRate = 44100;
+            int audioChannelCount = 2;
+            
+            if (count >= 2 && arguments[1].isNumber()) {
+              audioSampleRate = (int)arguments[1].asNumber();
+            }
+            if (count >= 3 && arguments[2].isNumber()) {
+              audioChannelCount = (int)arguments[2].asNumber();
+            }
+            
             auto instance =
                 std::make_shared<VideoCompositionFramesExtractorSyncHostObject>(
-                    videoComposition);
+                    videoComposition, audioSampleRate, audioChannelCount);
             return jsi::Object::createFromHostObject(runtime, instance);
           });
 

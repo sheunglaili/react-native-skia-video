@@ -8,9 +8,12 @@
 namespace RNSkiaVideo {
 
 VideoCompositionItemDecoder::VideoCompositionItemDecoder(
-    std::shared_ptr<VideoCompositionItem> item, bool realTime) {
+    std::shared_ptr<VideoCompositionItem> item, bool realTime, int audioSampleRate,
+    int audioChannelCount) {
   this->item = item;
   this->realTime = realTime;
+  this->audioSampleRate = audioSampleRate;
+  this->audioChannelCount = audioChannelCount;
   lock = [[NSObject alloc] init];
   NSString* path =
       [NSString stringWithCString:item->path.c_str()
@@ -19,7 +22,7 @@ VideoCompositionItemDecoder::VideoCompositionItemDecoder(
   videoTrack = [[asset tracksWithMediaType:AVMediaTypeVideo] firstObject];
   if (!videoTrack) {
     throw [NSError
-        errorWithDomain:@"com.azzapp.rnskv"
+        errorWithDomain:@"com.sheunglaili.rnskv"
                    code:0
                userInfo:@{
                  NSLocalizedDescriptionKey : [NSString
@@ -263,8 +266,8 @@ void VideoCompositionItemDecoder::setupAudioReader(CMTime initialTime) {
   // Audio output settings - Linear PCM for ArrayBuffer compatibility
   NSDictionary* audioSettings = @{
     AVFormatIDKey : @(kAudioFormatLinearPCM),
-    AVSampleRateKey : @(44100),
-    AVNumberOfChannelsKey : @(2),
+    AVSampleRateKey : @(audioSampleRate),
+    AVNumberOfChannelsKey : @(audioChannelCount),
     AVLinearPCMBitDepthKey : @(16),
     AVLinearPCMIsFloatKey : @(NO),
     AVLinearPCMIsBigEndianKey : @(NO),
