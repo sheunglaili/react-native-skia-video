@@ -370,10 +370,10 @@ void VideoEncoderHostObject::encodeAudioBuffer(uint8_t* audioData, size_t audioD
       &sampleBuffer
   );
 
-  CFRelease(formatDescription);
 
   if (status != noErr || !sampleBuffer) {
     CFRelease(blockBuffer);
+    CFRelease(formatDescription);
     return;
   }
 
@@ -395,6 +395,7 @@ void VideoEncoderHostObject::encodeAudioBuffer(uint8_t* audioData, size_t audioD
 
   // Step 4: Cleanup (same order as reference)
   CFRelease(sampleBuffer);
+  CFRelease(formatDescription);
   CFRelease(blockBuffer);
 }
 
