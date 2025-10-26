@@ -69,13 +69,23 @@ void install(jsi::Runtime& jsiRuntime) {
           jsiRuntime,
           jsi::PropNameID::forAscii(
               jsiRuntime, "createVideoCompositionFramesExtractorSync"),
-          1,
+          3,
           [](jsi::Runtime& runtime, const jsi::Value& thisValue,
              const jsi::Value* arguments, size_t count) -> jsi::Value {
-            if (count != 1 || !arguments[0].isObject()) {
+            if (count < 1 || !arguments[0].isObject()) {
               throw jsi::JSError(runtime,
                                  "createVideoCompositionFramesExtractorSync(.."
-                                 ") expects one arguments (object)!");
+                                 ") expects at least one argument (object)!");
+            }
+
+            // Extract audio settings from arguments 2 and 3 for API consistency
+            // Note: Android preserves original audio format, so these parameters
+            // are accepted but not used in the Android implementation
+            if (count >= 2 && arguments[1].isNumber()) {
+              // audioSampleRate = (int)arguments[1].asNumber(); // Not used on Android
+            }
+            if (count >= 3 && arguments[2].isNumber()) {
+              // audioChannelCount = (int)arguments[2].asNumber(); // Not used on Android
             }
 
             auto instance =

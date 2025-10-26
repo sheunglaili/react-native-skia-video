@@ -154,8 +154,19 @@ void VideoEncoderHostObject::prepare() {
       [AVAssetWriterInput assetWriterInputWithMediaType:AVMediaTypeAudio
                                          outputSettings:audioSettings];
   audioWriterInput.expectsMediaDataInRealTime = NO;
+  audioWriterInput.performsMultiPassEncodingIfSupported = YES;
+
+  if (@available(iOS 17.0, macOS 14.0, *)) {
+    NSLog(@"✅ mediaDataLocation API is available");
+    audioWriterInput.mediaDataLocation = AVAssetWriterInputMediaDataLocationBeforeMainMediaDataNotInterleaved;
+  } else {
+    NSLog(@"⚠️  Running on iOS/macOS < 17/14, mediaDataLocation not available");
+  }
+  
   if ([assetWriter canAddInput:audioWriterInput]) {
     [assetWriter addInput:audioWriterInput];
+  } else {
+    NSLog(@"Could not add audio input to asset writer: %@", assetWriter.error.localizedDescription);
   }
 
   [assetWriter startWriting];
@@ -266,45 +277,64 @@ void VideoEncoderHostObject::encodeFrame(id<MTLTexture> mlTexture,
 }
 
 void VideoEncoderHostObject::encodeAudioBuffer(uint8_t* audioData, size_t audioDataSize, CMTime time) {
-  if (!audioWriterInput || !audioWriterInput.isReadyForMoreMediaData) {
+  if (!audioWriterInput) {
+    NSLog(@"Audio writer input is null");
     return;
+  }
+  
+  // Use the same retry logic as video encoding
+  int attempt = 0;
+  while (!audioWriterInput.isReadyForMoreMediaData) {
+    if (attempt > 100) {
+      NSLog(@"Audio writer input not ready after 100 attempts at time %.2f", CMTimeGetSeconds(time));
+      NSLog(@"Audio writer input ready: %@", 
+            audioWriterInput.isReadyForMoreMediaData ? @"YES" : @"NO");
+      NSLog(@"Asset writer status: %ld", (long)assetWriter.status);
+      if (assetWriter.error) {
+        NSLog(@"Asset writer error: %@", assetWriter.error.localizedDescription);
+      }
+      return;
+    }
+    attempt++;
+    usleep(5000); // Same 5ms delay as video encoding
   }
 
   if (audioDataSize == 0 || audioData == nullptr) {
+    NSLog(@"Invalid audio data: size=%zu, data=%p", audioDataSize, audioData);
     return;
   }
+  
+  // Check for memory pressure before processing
+  if (audioDataSize > 1024 * 1024) {  // If buffer is larger than 1MB
+    NSLog(@"Large audio buffer detected: %zu bytes at time %.2f", audioDataSize, CMTimeGetSeconds(time));
+  }
 
-  // Create CMBlockBuffer from ArrayBuffer data (copy required for async processing)
+  // Step 1: Wrap raw bytes in CMBlockBuffer (more efficient approach)
   CMBlockBufferRef blockBuffer = NULL;
   OSStatus status = CMBlockBufferCreateWithMemoryBlock(
       kCFAllocatorDefault,
-      NULL,  // Allocate new memory
-      audioDataSize,
-      kCFAllocatorDefault,
+      (void *)audioData,      // Use existing data pointer
+      audioDataSize,          // data length
+      kCFAllocatorNull,       // Don't copy, use existing memory
       NULL,
       0,
       audioDataSize,
       0,
-      &blockBuffer);
-
-  if (status != noErr || !blockBuffer) {
+      &blockBuffer
+  );
+  
+  if (status != kCMBlockBufferNoErr || !blockBuffer) {
+    NSLog(@"Failed to create CMBlockBuffer: %d", (int)status);
     return;
   }
 
-  // Copy data from ArrayBuffer to CMBlockBuffer
-  status = CMBlockBufferReplaceDataBytes(audioData, blockBuffer, 0, audioDataSize);
-  if (status != noErr) {
-    CFRelease(blockBuffer);
-    return;
-  }
-
-  // Create audio format description for Linear PCM (matching our decoder output)
+  // Step 2: Create audio format description for Linear PCM
   AudioStreamBasicDescription asbd = {0};
-  asbd.mSampleRate = 44100;
+  asbd.mSampleRate = audioSampleRate;  // Use constructor parameter
   asbd.mFormatID = kAudioFormatLinearPCM;
   asbd.mFormatFlags = kLinearPCMFormatFlagIsSignedInteger | kLinearPCMFormatFlagIsPacked;
   asbd.mBitsPerChannel = 16;
-  asbd.mChannelsPerFrame = 2;
+  asbd.mChannelsPerFrame = audioChannelCount;  // Use constructor parameter
   asbd.mBytesPerFrame = asbd.mChannelsPerFrame * (asbd.mBitsPerChannel / 8);
   asbd.mFramesPerPacket = 1;
   asbd.mBytesPerPacket = asbd.mBytesPerFrame * asbd.mFramesPerPacket;
@@ -325,36 +355,60 @@ void VideoEncoderHostObject::encodeAudioBuffer(uint8_t* audioData, size_t audioD
     return;
   }
 
-  // Calculate number of samples
-  size_t numSamples = audioDataSize / asbd.mBytesPerFrame;
+  // Step 3: Calculate frames and create CMSampleBuffer (more efficient approach)
+  size_t bytesPerFrame = asbd.mBytesPerFrame;
+  size_t numFrames = audioDataSize / bytesPerFrame;
 
-  // Create CMSampleBuffer
   CMSampleBufferRef sampleBuffer = NULL;
   status = CMAudioSampleBufferCreateReadyWithPacketDescriptions(
       kCFAllocatorDefault,
       blockBuffer,
-      formatDescription,
-      numSamples,
+      formatDescription,  // Reuse the format description
+      numFrames,
       time,
-      NULL,
-      &sampleBuffer);
+      NULL,  // packetDescriptions
+      &sampleBuffer
+  );
 
-  CFRelease(blockBuffer);
-  CFRelease(formatDescription);
 
   if (status != noErr || !sampleBuffer) {
+    CFRelease(blockBuffer);
+    CFRelease(formatDescription);
     return;
   }
 
   // Append to audio writer input
   if ([audioWriterInput isReadyForMoreMediaData]) {
-    [audioWriterInput appendSampleBuffer:sampleBuffer];
+    BOOL success = [audioWriterInput appendSampleBuffer:sampleBuffer];
+    if (!success) {
+      NSLog(@"Failed to append audio sample buffer. Writer status: %ld", (long)assetWriter.status);
+      if (assetWriter.status == AVAssetWriterStatusFailed) {
+        NSLog(@"Asset writer failed: %@", assetWriter.error.localizedDescription);
+      }
+    } else {
+      // Log successful audio encoding for debugging
+      NSLog(@"Successfully encoded audio at time %.2f, size: %zu", CMTimeGetSeconds(time), audioDataSize);
+    }
+  } else {
+    NSLog(@"Audio writer input not ready for more media data at time %.2f", CMTimeGetSeconds(time));
   }
 
+  // Step 4: Cleanup (same order as reference)
   CFRelease(sampleBuffer);
+  CFRelease(formatDescription);
+  CFRelease(blockBuffer);
 }
 
 void VideoEncoderHostObject::finish() {
+  if (assetWriterInput) {
+    [assetWriterInput markAsFinished];
+    NSLog(@"Video input marked as finished");
+  }
+  
+  if (audioWriterInput) {
+    [audioWriterInput markAsFinished];
+    NSLog(@"Audio input marked as finished");
+  }
 
   __block std::promise<void> promise;
   std::future<void> future = promise.get_future();
