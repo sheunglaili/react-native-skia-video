@@ -287,8 +287,7 @@ void VideoEncoderHostObject::encodeAudioBuffer(uint8_t* audioData, size_t audioD
   while (!audioWriterInput.isReadyForMoreMediaData) {
     if (attempt > 100) {
       NSLog(@"Audio writer input not ready after 100 attempts at time %.2f", CMTimeGetSeconds(time));
-      NSLog(@"Audio writer input finished: %@, ready: %@", 
-            audioWriterInput.isFinished ? @"YES" : @"NO",
+      NSLog(@"Audio writer input ready: %@", 
             audioWriterInput.isReadyForMoreMediaData ? @"YES" : @"NO");
       NSLog(@"Asset writer status: %ld", (long)assetWriter.status);
       if (assetWriter.error) {
@@ -361,13 +360,10 @@ void VideoEncoderHostObject::encodeAudioBuffer(uint8_t* audioData, size_t audioD
   size_t numFrames = audioDataSize / bytesPerFrame;
 
   CMSampleBufferRef sampleBuffer = NULL;
-  status = CMAudioSampleBufferCreateWithPacketDescriptions(
+  status = CMAudioSampleBufferCreateReadyWithPacketDescriptions(
       kCFAllocatorDefault,
       blockBuffer,
-      true,  // dataReady
-      NULL,  // makeDataReadyCallback
-      NULL,  // makeDataReadyRefcon
-      formatDescription,
+      formatDescription,  // Reuse the format description
       numFrames,
       time,
       NULL,  // packetDescriptions

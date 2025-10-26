@@ -225,7 +225,7 @@ void VideoCompositionFramesExtractorHostObject::init() {
     try {
       for (const auto& item : composition->items) {
         itemDecoders[item->id] =
-            std::make_shared<VideoCompositionItemDecoder>(item, true);
+            std::make_shared<VideoCompositionItemDecoder>(item, true, 44100, 2); 
       }
     } catch (NSError* error) {
       itemDecoders.clear();
