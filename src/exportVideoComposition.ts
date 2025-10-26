@@ -96,10 +96,11 @@ export const exportVideoComposition = async <T = undefined>({
         encoder = RNSkiaVideoModule.createVideoEncoder(encoderOptions);
         encoder.prepare();
 
-        frameExtractor =
-          RNSkiaVideoModule.createVideoCompositionExtractorSync(
-            videoComposition
-          );
+        frameExtractor = RNSkiaVideoModule.createVideoCompositionExtractorSync(
+          videoComposition,
+          encoderOptions.audioSampleRate,
+          encoderOptions.audioChannelCount
+        );
         frameExtractor.start();
 
         const nbFrames = videoComposition.duration * options.frameRate;

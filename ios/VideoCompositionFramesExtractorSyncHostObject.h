@@ -15,13 +15,17 @@ class JSI_EXPORT VideoCompositionFramesExtractorSyncHostObject
     : public jsi::HostObject {
 public:
   VideoCompositionFramesExtractorSyncHostObject(
-      std::shared_ptr<VideoComposition> composition);
+      std::shared_ptr<VideoComposition> composition, 
+      int audioSampleRate,
+      int audioChannelCount);
   ~VideoCompositionFramesExtractorSyncHostObject();
   jsi::Value get(jsi::Runtime&, const jsi::PropNameID& name) override;
   std::vector<jsi::PropNameID> getPropertyNames(jsi::Runtime& rt) override;
 
 private:
   std::shared_ptr<VideoComposition> composition;
+  int audioSampleRate;
+  int audioChannelCount;
   std::map<std::string, std::shared_ptr<VideoCompositionItemDecoder>>
       itemDecoders;
   std::map<std::string, std::shared_ptr<VideoFrame>> currentFrames;

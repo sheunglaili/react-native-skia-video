@@ -155,6 +155,14 @@ void VideoEncoderHostObject::prepare() {
                                          outputSettings:audioSettings];
   audioWriterInput.expectsMediaDataInRealTime = NO;
   audioWriterInput.performsMultiPassEncodingIfSupported = YES;
+
+  if (@available(iOS 17.0, macOS 14.0, *)) {
+    NSLog(@"✅ mediaDataLocation API is available");
+    audioWriterInput.mediaDataLocation = AVAssetWriterInputMediaDataLocationBeforeMainMediaDataNotInterleaved;
+  } else {
+    NSLog(@"⚠️  Running on iOS/macOS < 17/14, mediaDataLocation not available");
+  }
+  
   if ([assetWriter canAddInput:audioWriterInput]) {
     [assetWriter addInput:audioWriterInput];
   } else {
@@ -395,13 +403,12 @@ void VideoEncoderHostObject::encodeAudioBuffer(uint8_t* audioData, size_t audioD
 }
 
 void VideoEncoderHostObject::finish() {
-  // CRITICAL: Mark inputs as finished before calling finishWriting
-  if (assetWriterInput && !assetWriterInput.isFinished) {
+  if (assetWriterInput) {
     [assetWriterInput markAsFinished];
     NSLog(@"Video input marked as finished");
   }
   
-  if (audioWriterInput && !audioWriterInput.isFinished) {
+  if (audioWriterInput) {
     [audioWriterInput markAsFinished];
     NSLog(@"Audio input marked as finished");
   }
