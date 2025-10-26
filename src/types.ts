@@ -473,26 +473,46 @@ export type RNSkiaVideoModule = {
   /**
    * Creates a synchronous video composition extractor for the specified video composition.
    * @param composition The video composition.
+   * @param audioSampleRate The audio sample rate for decoding (default: 44100).
+   * @param audioChannelCount The number of audio channels for decoding (default: 2).
    * @returns The video composition extractor.
    */
   createVideoCompositionExtractorSync: (
     /**
      * The video composition to extract frames and audio from.
      */
-    composition: VideoComposition
+    composition: VideoComposition,
+    /**
+     * The audio sample rate for decoding (default: 44100).
+     */
+    audioSampleRate?: number,
+    /**
+     * The number of audio channels for decoding (default: 2).
+     */
+    audioChannelCount?: number
   ) => VideoCompositionExtractorSync;
 
   /**
    * @deprecated Use createVideoCompositionExtractorSync instead.
    * Creates a synchronous video composition frames extractor for the specified video composition.
    * @param composition The video composition.
+   * @param audioSampleRate The audio sample rate for decoding (default: 44100).
+   * @param audioChannelCount The number of audio channels for decoding (default: 2).
    * @returns The video composition frames extractor.
    */
   createVideoCompositionFramesExtractorSync: (
     /**
      * The video composition to extract frames from.
      */
-    composition: VideoComposition
+    composition: VideoComposition,
+    /**
+     * The audio sample rate for decoding (default: 44100).
+     */
+    audioSampleRate?: number,
+    /**
+     * The number of audio channels for decoding (default: 2).
+     */
+    audioChannelCount?: number
   ) => VideoCompositionFramesExtractorSync;
 
   /**

@@ -10,8 +10,11 @@ namespace RNSkiaVideo {
 
 VideoCompositionFramesExtractorSyncHostObject::
     VideoCompositionFramesExtractorSyncHostObject(
-        std::shared_ptr<VideoComposition> composition)
-    : composition(composition) {}
+        std::shared_ptr<VideoComposition> composition,
+        int audioSampleRate,
+        int audioChannelCount)
+    : composition(composition), audioSampleRate(audioSampleRate),
+      audioChannelCount(audioChannelCount) {}
 
 VideoCompositionFramesExtractorSyncHostObject::
     ~VideoCompositionFramesExtractorSyncHostObject() {
@@ -42,7 +45,7 @@ jsi::Value VideoCompositionFramesExtractorSyncHostObject::get(
           try {
             for (const auto& item : composition->items) {
               itemDecoders[item->id] =
-                  std::make_shared<VideoCompositionItemDecoder>(item, false);
+                  std::make_shared<VideoCompositionItemDecoder>(item, false, audioSampleRate, audioChannelCount);
             }
           } catch (NSError* error) {
             itemDecoders.clear();
